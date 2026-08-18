@@ -1,0 +1,143 @@
+"use client";
+
+import { useMemo, useState, type FormEvent } from "react";
+import type { DashboardData, MechanicRule, ScoreKey } from "../../lib/types";
+
+type View = "player" | "officer" | "configure";
+const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
+const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
+
+export function RaidApp({ initialData }: { initialData: DashboardData }) {
+  const [view, setView] = useState<View>("player");
+  const [playerId, setPlayerId] = useState(initialData.players[0].id);
+  const [bossId, setBossId] = useState(initialData.bosses[0].id);
+  const [pullId, setPullId] = useState(initialData.pulls[0].id);
+  const [rules, setRules] = useState(initialData.rules);
+  const [importOpen, setImportOpen] = useState(false);
+  const [reportUrls, setReportUrls] = useState("");
+  const [importStatus, setImportStatus] = useState("");
+  const [shareStatus, setShareStatus] = useState("");
+  const [ruleStatus, setRuleStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const player = initialData.players.find((candidate) => candidate.id === playerId) ?? initialData.players[0];
+  const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
+  const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
+  const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
+  const playerEvents = initialData.events.filter((event) => event.playerId === player.id);
+  const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
+
+  const officerSummary = useMemo(() => {
+    const average = (key: ScoreKey) => Math.round(initialData.players.reduce((total, candidate) => total + candidate.scores[key], 0) / initialData.players.length);
+    return { mechanics: average("mechanics"), performance: average("performance"), attendance: average("attendance"), preparation: average("preparation") };
+  }, [initialData.players]);
+
+  function chooseBoss(nextBoss: string) {
+    setBossId(nextBoss);
+    setPullId(initialData.pulls.find((candidate) => candidate.bossId === nextBoss)?.id ?? initialData.pulls[0].id);
+  }
+
+  async function importReports(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setImportStatus("Reading report data…");
+    try {
+      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: reportUrls, season: initialData.season }) });
+      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; sourceMode?: string }[]; liveApiConfigured?: boolean };
+      if (!response.ok) throw new Error(result.error ?? "Import failed.");
+      const imported = result.reports?.filter((report) => report.status === "imported") ?? [];
+      const pulls = imported.reduce((total, report) => total + (report.pulls ?? 0), 0);
+      const demoMode = imported.some((report) => report.sourceMode === "demo");
+      setImportStatus(`${imported.length} report${imported.length === 1 ? "" : "s"} stored with ${pulls} pulls${demoMode ? " using the credential-free demo adapter" : " from Warcraft Logs"}.`);
+      setReportUrls("");
+    } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
+    finally { setBusy(false); }
+  }
+
+  async function createShare() {
+    setBusy(true); setShareStatus("Creating a player-only link…");
+    try {
+      const response = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, bossId, pullId: pull?.id }) });
+      const result = await response.json() as { error?: string; url?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? "Share link failed.");
+      const fullUrl = new URL(result.url, window.location.origin).href;
+      try { await navigator.clipboard.writeText(fullUrl); setShareStatus("Private link copied. It contains no teammate details."); }
+      catch { setShareStatus(fullUrl); }
+    } catch (error) { setShareStatus(error instanceof Error ? error.message : "The link could not be created."); }
+    finally { setBusy(false); }
+  }
+
+  async function addRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setRuleStatus("Saving rule…");
+    const form = new FormData(event.currentTarget);
+    const nextRule: MechanicRule = {
+      id: `rule-${crypto.randomUUID()}`, bossId, spellId: Number(form.get("spellId")), name: String(form.get("name") ?? ""),
+      category: String(form.get("category")) as MechanicRule["category"], severity: String(form.get("severity")) as MechanicRule["severity"],
+      weight: Number(form.get("weight")), eventType: String(form.get("eventType")) as MechanicRule["eventType"],
+      difficulties: form.getAll("difficulty").map(String), roles: form.getAll("role").map(String),
+      condition: { minAmount: Number(form.get("minAmount")) || undefined, countOncePerCast: form.get("countOnce") === "on", ignoreTanks: form.get("ignoreTanks") === "on", note: String(form.get("note") ?? "") || undefined },
+    };
+    try {
+      const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextRule) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Rule could not be saved.");
+      setRules((current) => [nextRule, ...current]); setRuleStatus(`${nextRule.name} is active for future imports.`); event.currentTarget.reset();
+    } catch (error) { setRuleStatus(error instanceof Error ? error.message : "Rule could not be saved."); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <main className="shell">
+      <header className="topbar">
+        <button className="brand brand-button" type="button" onClick={() => setView("player")} aria-label="Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Raid Intelligence</small></span></button>
+        <nav aria-label="Primary navigation">
+          <button className={view === "player" ? "active" : ""} type="button" onClick={() => setView("player")}>Player view</button>
+          <button className={view === "officer" ? "active" : ""} type="button" onClick={() => setView("officer")}>Officer view</button>
+          <button className={view === "configure" ? "active" : ""} type="button" onClick={() => setView("configure")}>Configure</button>
+        </nav>
+        <div className="header-actions"><span className="demo-pill">Demo dataset</span><button className="import-button" type="button" onClick={() => setImportOpen(true)}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
+      </header>
+
+      {view === "player" && <section className="dashboard" id="dashboard">
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy} onClick={createShare} type="button">Share private view</button></div>
+        <div className="hero-row"><div><h1>{player.scores.mechanics >= 90 ? "Good pull" : player.scores.mechanics >= 80 ? "Solid pull" : "Clear next step"}, {player.name}.</h1><p>{player.summary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
+        {shareStatus && <div className="status-line" role="status"><span />{shareStatus}</div>}
+        <div className="filters" aria-label="Dashboard filters">
+          <label>Player<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>{initialData.players.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
+          <label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
+          <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
+          <p><span className="live-dot" /> {boss.name} · analyzed</p>
+        </div>
+        <section className="score-grid" aria-label="Player scores">
+          {scoreKeys.map((key, index) => <article className={`score-card tone-${index}`} key={key}><div className="score-heading"><span>{scoreLabels[key]}</span><small>{key === "performance" ? `${player.parse}th percentile` : key === "attendance" ? player.attendanceLabel : key === "preparation" ? player.prepLabel : `${findings} finding${findings === 1 ? "" : "s"}`}</small></div><div className="score-value">{player.scores[key]}<span>/100</span></div><div className="score-track"><i style={{ width: `${player.scores[key]}%` }} /></div><p className="score-context">Raid average {initialData.raidAverages[key]}</p></article>)}
+        </section>
+        <section className="insight-grid">
+          <article className="panel takeaways"><div className="panel-heading"><div><p className="eyebrow"><span /> 10-second review</p><h2>Your pull, distilled</h2></div><span className="confidence">High confidence</span></div><div className="takeaway good"><span className="takeaway-icon">✓</span><div><strong>What went well</strong><p>{player.wins.slice(0, 2).join(" · ")}</p></div></div><div className="takeaway watch"><span className="takeaway-icon">!</span><div><strong>One thing to fix</strong><p>{player.focus[0]}</p></div></div></article>
+          <article className="panel event-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Key events</p><h2>What shaped the score</h2></div><span className="event-count">{playerEvents.length} relevant</span></div><ul className="events">{playerEvents.slice(0, 4).map((event) => <li key={event.id}><span className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span><div><strong>{event.ability}</strong><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></article>
+        </section>
+        <section className="lower-grid">
+          <article className="panel trend-panel"><div><p className="eyebrow muted"><span /> Trend</p><h2>Mechanics are moving {player.trend.at(-1)! >= player.trend[0] ? "up" : "down"}</h2><p>Last six evaluated pulls</p></div><div className="trend-bars" aria-label={`Mechanics trend: ${player.trend.join(", ")}`}>{player.trend.map((value, index) => <i key={`${value}-${index}`} style={{ height: `${value}%` }}><span>{value}</span></i>)}</div></article>
+          <article className="panel stat-panel"><p className="eyebrow muted"><span /> Pull facts</p><h2>Evidence, not mystery</h2><div className="fact-grid"><span><strong>{player.deaths}</strong><small>Deaths</small></span><span><strong>{Math.round(player.avoidableDamage / 1000)}k</strong><small>Avoidable</small></span><span><strong>{player.interrupts + player.dispels}</strong><small>Utility</small></span><span><strong>{player.ilvlParse}</strong><small>ilvl parse</small></span></div></article>
+        </section>
+      </section>}
+
+      {view === "officer" && <section className="dashboard officer-view" id="officer">
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Add raid reports</button></div>
+        <div className="section-hero"><div><h1>See the whole roster, clearly.</h1><p>Four independent signals. No hidden overall score, and every rating can be traced back to what happened.</p></div><div className="hierarchy-note"><small>Current scope</small><strong>{initialData.season}</strong><span>Season → Night → Report → Boss → Pull → Player</span></div></div>
+        <section className="officer-summary">{scoreKeys.map((key) => <article key={key}><span>{scoreLabels[key]} average</span><strong>{officerSummary[key]}</strong><small>{officerSummary[key] >= initialData.raidAverages[key] ? "On track" : "Review"}</small></article>)}</section>
+        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>Preparation</th><th>Review</th></tr></thead><tbody>{[...initialData.players].sort((a, b) => b.scores.mechanics - a.scores.mechanics).map((candidate) => { const needsReview = scoreKeys.some((key) => candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{scoreKeys.map((key) => <td key={key}><span className={`table-score ${candidate.scores[key] >= 90 ? "high" : candidate.scores[key] < 80 ? "low" : ""}`}>{candidate.scores[key]}</span></td>)}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
+        <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
+      </section>}
+
+      {view === "configure" && <section className="dashboard config-view" id="configure">
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Encounter configuration</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Import reports</button></div>
+        <div className="section-hero"><div><h1>Define what matters once.</h1><p>The engine stays the same. Each raid tier is maintained here as a set of readable, editable mechanic rules.</p></div><div className="engine-note"><span>Configuration</span><b>→</b><span>Analysis engine</span><b>→</b><span>Four scores</span></div></div>
+        <div className="config-filters"><label>Raid<select defaultValue={initialData.raid}><option>{initialData.raid}</option></select></label><label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><div><span>Active rules</span><strong>{rules.filter((rule) => rule.bossId === bossId).length}</strong></div></div>
+        <section className="config-grid">
+          <article className="panel rules-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Rule library</p><h2>{boss.name}</h2></div><span className="confidence">Config-driven</span></div><div className="rule-list">{rules.filter((rule) => rule.bossId === bossId).map((rule) => <div className="rule-row" key={rule.id}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><div><strong>{rule.name}</strong><small>Spell {rule.spellId} · {rule.category}</small><p>{rule.roles.join(", ")} · {rule.difficulties.join(", ")}{rule.condition.note ? ` · ${rule.condition.note}` : ""}</p></div><b>−{rule.weight}</b></div>)}{!rules.some((rule) => rule.bossId === bossId) && <div className="empty-rules">No rules for this boss yet. Add the first one beside this list.</div>}</div></article>
+          <form className="panel rule-form" onSubmit={addRule}><p className="eyebrow"><span /> New mechanic rule</p><h2>Teach the analyzer</h2><div className="form-pair"><label>Mechanic name<input name="name" placeholder="e.g. Gilded Wave" required /></label><label>Spell ID<input name="spellId" inputMode="numeric" placeholder="451117" required /></label></div><div className="form-pair"><label>Category<select name="category" defaultValue="Avoidable damage"><option>Avoidable damage</option><option>Mechanic failure</option><option>Interrupt</option><option>Dispel</option><option>Defensive</option><option>Soak</option><option>Utility</option></select></label><label>Event type<select name="eventType" defaultValue="damage"><option>damage</option><option>debuff</option><option>cast</option><option>interrupt</option><option>dispel</option><option>death</option></select></label></div><div className="form-pair"><label>Severity<select name="severity" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Penalty weight<input name="weight" inputMode="decimal" defaultValue="4" required /></label></div><fieldset><legend>Applies on</legend><label><input name="difficulty" type="checkbox" value="Normal" /> Normal</label><label><input name="difficulty" type="checkbox" value="Heroic" defaultChecked /> Heroic</label><label><input name="difficulty" type="checkbox" value="Mythic" defaultChecked /> Mythic</label></fieldset><fieldset><legend>Roles</legend><label><input name="role" type="checkbox" value="Tank" defaultChecked /> Tanks</label><label><input name="role" type="checkbox" value="Healer" defaultChecked /> Healers</label><label><input name="role" type="checkbox" value="DPS" defaultChecked /> DPS</label></fieldset><details><summary>Optional conditions</summary><label>Minimum amount<input name="minAmount" inputMode="numeric" placeholder="50000" /></label><label className="checkline"><input name="countOnce" type="checkbox" /> Count once per cast</label><label className="checkline"><input name="ignoreTanks" type="checkbox" /> Ignore tanks</label><label>Rule note<textarea name="note" placeholder="Ignore the first unavoidable tick…" /></label></details><button className="primary-button" disabled={busy} type="submit">Save mechanic rule</button>{ruleStatus && <p className="form-status" role="status">{ruleStatus}</p>}</form>
+        </section>
+      </section>}
+
+      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Add one report or a whole raid week</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste one Warcraft Logs report URL per line. Reports are normalized into the season hierarchy, then evaluated against active boss rules.</p><form onSubmit={importReports}><label>Report URLs<textarea autoFocus value={reportUrls} onChange={(event) => setReportUrls(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345\nhttps://www.warcraftlogs.com/reports/XYZ98765"} required /></label><div className="import-path"><span>Season</span><b>→</b><span>Raid night</span><b>→</b><span>Report</span><b>→</b><span>Boss</span><b>→</b><span>Pull</span><b>→</b><span>Player</span></div><button className="primary-button" disabled={busy} type="submit">{busy ? "Importing…" : "Import and analyze"}</button>{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form><small className="credential-note">Public reports use the live Warcraft Logs API when server credentials are connected. Until then, valid URLs exercise the full storage flow with clearly marked demo analysis.</small></section></div>}
+    </main>
+  );
+}

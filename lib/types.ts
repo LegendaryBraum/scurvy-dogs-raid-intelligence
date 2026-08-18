@@ -1,0 +1,66 @@
+export type ScoreKey = "mechanics" | "performance" | "attendance" | "preparation";
+
+export type PlayerSnapshot = {
+  id: string;
+  name: string;
+  realm: string;
+  className: string;
+  spec: string;
+  role: "Tank" | "Healer" | "DPS";
+  scores: Record<ScoreKey, number>;
+  parse: number;
+  ilvlParse: number;
+  attendanceLabel: string;
+  prepLabel: string;
+  trend: number[];
+  summary: string;
+  wins: string[];
+  focus: string[];
+  deaths: number;
+  interrupts: number;
+  dispels: number;
+  avoidableDamage: number;
+};
+
+export type RaidEvent = {
+  id: string;
+  playerId: string;
+  spellId: number;
+  ability: string;
+  kind: "success" | "warning" | "death" | "utility";
+  detail: string;
+  timestamp: string;
+  amount?: number;
+};
+
+export type MechanicRule = {
+  id: string;
+  bossId: string;
+  spellId: number;
+  name: string;
+  category: "Avoidable damage" | "Mechanic failure" | "Interrupt" | "Dispel" | "Defensive" | "Soak" | "Utility";
+  severity: "Low" | "Medium" | "High" | "Critical";
+  weight: number;
+  eventType: "damage" | "debuff" | "cast" | "interrupt" | "dispel" | "death";
+  difficulties: string[];
+  roles: string[];
+  condition: {
+    minAmount?: number;
+    countOncePerCast?: boolean;
+    ignoreTanks?: boolean;
+    note?: string;
+  };
+};
+
+export type DashboardData = {
+  season: string;
+  raidNight: string;
+  reportCode: string;
+  raid: string;
+  bosses: { id: string; name: string }[];
+  pulls: { id: string; bossId: string; label: string; killed: boolean; duration: string; difficulty: string }[];
+  players: PlayerSnapshot[];
+  events: RaidEvent[];
+  rules: MechanicRule[];
+  raidAverages: Record<ScoreKey, number>;
+};
