@@ -1,5 +1,5 @@
 import { ensureSchema } from "../../../db/runtime";
-import { demoData } from "../../../lib/demo-data";
+import { raidData } from "../../../lib/raid-data";
 
 export const runtime = "edge";
 
@@ -11,7 +11,7 @@ async function stablePlayerId(name: string, realm: string) {
 export async function POST(request: Request) {
   try {
     const payload = await request.json() as { playerId?: string; bossId?: string; pullId?: string };
-    const player = demoData.players.find((candidate) => candidate.id === payload.playerId) ?? demoData.players[0];
+    const player = raidData.players.find((candidate) => candidate.id === payload.playerId) ?? raidData.players[0];
     const db = await ensureSchema();
     const playerId = await stablePlayerId(player.name, player.realm);
     const token = crypto.randomUUID().replaceAll("-", "").slice(0, 20);

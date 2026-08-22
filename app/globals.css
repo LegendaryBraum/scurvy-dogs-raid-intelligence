@@ -28,6 +28,7 @@ nav button { display: flex; align-items: center; padding: 0; color: #66757b; bac
 nav button.active { color: var(--teal); border-color: var(--teal); }
 .header-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .demo-pill { padding: 6px 9px; border-radius: 20px; color: #6e7d82; background: #edf2f1; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.demo-pill.real-data { color: #1f715c; background: #e2f3ec; }
 .import-button { padding: 9px 13px; border: 0; border-radius: 8px; color: white; background: var(--navy); font-size: 11px; font-weight: 800; cursor: pointer; }
 .avatar { margin-left: auto; width: 34px; height: 34px; border: 0; border-radius: 50%; color: #fff; background: #b56e4d; font-size: 11px; font-weight: 800; cursor: pointer; }
 .header-actions .avatar { margin-left: 0; }
@@ -89,11 +90,17 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .events small { margin-top: 3px; color: #899498; font-size: 9px; }
 .events time { color: #839095; font-size: 10px; font-variant-numeric: tabular-nums; }
 .score-context { margin: 8px 0 0; color: #8b989c; font-size: 9px; }
+.score-unavailable .score-value { color: #728085; font-family: Arial, sans-serif; font-size: 27px; font-weight: 800; letter-spacing: -.02em; }
+.score-unavailable .score-track i { background: #c6d1d0; }
 .event-count { color: #879397; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .event-status.utility { color: #376f91; background: #e8f1f6; }
 .event-status.death { color: #ad514e; background: #f8e9e8; }
 .status-line { margin: 18px 0 -19px; display: flex; align-items: center; gap: 8px; color: #4f676e; font-size: 11px; }
 .status-line span { width: 7px; height: 7px; border-radius: 50%; background: #2d9a78; }
+.data-source-line { flex-wrap: wrap; }
+.data-source-line a { color: #48636a; text-decoration: none; }
+.data-source-line a + a { color: #26735f; font-weight: 800; }
+.data-source-line a:hover { text-decoration: underline; }
 .lower-grid { margin-top: 14px; display: grid; grid-template-columns: 1.08fr .92fr; gap: 14px; }
 .trend-panel { min-height: 190px; display: grid; grid-template-columns: 1fr 1.2fr; align-items: stretch; gap: 24px; }
 .trend-panel > div > p:last-child, .anonymous-context > div > p:last-child { margin: 7px 0 0; color: var(--muted); font-size: 10px; }

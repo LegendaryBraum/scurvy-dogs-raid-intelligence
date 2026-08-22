@@ -1,4 +1,5 @@
 export type ScoreKey = "mechanics" | "performance" | "attendance" | "preparation";
+export type ScoreValue = number | null;
 
 export type PlayerSnapshot = {
   id: string;
@@ -7,9 +8,10 @@ export type PlayerSnapshot = {
   className: string;
   spec: string;
   role: "Tank" | "Healer" | "DPS";
-  scores: Record<ScoreKey, number>;
-  parse: number;
-  ilvlParse: number;
+  scores: Record<ScoreKey, ScoreValue>;
+  parse: number | null;
+  ilvlParse: number | null;
+  itemLevel?: number;
   attendanceLabel: string;
   prepLabel: string;
   trend: number[];
@@ -62,5 +64,12 @@ export type DashboardData = {
   players: PlayerSnapshot[];
   events: RaidEvent[];
   rules: MechanicRule[];
-  raidAverages: Record<ScoreKey, number>;
+  raidAverages: Record<ScoreKey, ScoreValue>;
+  dataSource?: {
+    label: string;
+    detail: string;
+    reportUrl: string;
+    wipefestUrl?: string;
+  };
+  preparationSummary?: string;
 };

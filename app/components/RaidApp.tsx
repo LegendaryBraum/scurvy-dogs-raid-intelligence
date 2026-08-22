@@ -26,9 +26,13 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
   const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
   const playerEvents = initialData.events.filter((event) => event.playerId === player.id);
   const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
+  const mechanicsScore = player.scores.mechanics ?? 0;
 
   const officerSummary = useMemo(() => {
-    const average = (key: ScoreKey) => Math.round(initialData.players.reduce((total, candidate) => total + candidate.scores[key], 0) / initialData.players.length);
+    const average = (key: ScoreKey) => {
+      const values = initialData.players.map((candidate) => candidate.scores[key]).filter((value): value is number => value !== null);
+      return values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
+    };
     return { mechanics: average("mechanics"), performance: average("performance"), attendance: average("attendance"), preparation: average("preparation") };
   }, [initialData.players]);
 
@@ -46,7 +50,9 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
       const imported = result.reports?.filter((report) => report.status === "imported") ?? [];
       const pulls = imported.reduce((total, report) => total + (report.pulls ?? 0), 0);
       const demoMode = imported.some((report) => report.sourceMode === "demo");
-      setImportStatus(`${imported.length} report${imported.length === 1 ? "" : "s"} stored with ${pulls} pulls${demoMode ? " using the credential-free demo adapter" : " from Warcraft Logs"}.`);
+      setImportStatus(demoMode
+        ? `${imported.length} URL stored through the demo adapter. The verified Aug 21 snapshot remains on screen.`
+        : `${imported.length} report${imported.length === 1 ? "" : "s"} stored with ${pulls} pulls from Warcraft Logs.`);
       setReportUrls("");
     } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
     finally { setBusy(false); }
@@ -93,37 +99,55 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
           <button className={view === "officer" ? "active" : ""} type="button" onClick={() => setView("officer")}>Officer view</button>
           <button className={view === "configure" ? "active" : ""} type="button" onClick={() => setView("configure")}>Configure</button>
         </nav>
-        <div className="header-actions"><span className="demo-pill">Demo dataset</span><button className="import-button" type="button" onClick={() => setImportOpen(true)}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
+        <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={() => setImportOpen(true)}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
       </header>
 
       {view === "player" && <section className="dashboard" id="dashboard">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy} onClick={createShare} type="button">Share private view</button></div>
-        <div className="hero-row"><div><h1>{player.scores.mechanics >= 90 ? "Good pull" : player.scores.mechanics >= 80 ? "Solid pull" : "Clear next step"}, {player.name}.</h1><p>{player.summary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
+        <div className="hero-row"><div><h1>{mechanicsScore >= 90 ? "Good pull" : mechanicsScore >= 80 ? "Solid pull" : "Clear next step"}, {player.name}.</h1><p>{player.summary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
+        {initialData.dataSource && <div className="status-line data-source-line"><span /><a href={initialData.dataSource.reportUrl} target="_blank" rel="noreferrer">{initialData.dataSource.detail}</a>{initialData.dataSource.wipefestUrl && <a href={initialData.dataSource.wipefestUrl} target="_blank" rel="noreferrer">Open Wipefest</a>}</div>}
         {shareStatus && <div className="status-line" role="status"><span />{shareStatus}</div>}
         <div className="filters" aria-label="Dashboard filters">
           <label>Player<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>{initialData.players.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
           <label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
-          <p><span className="live-dot" /> {boss.name} · analyzed</p>
+          <p><span className="live-dot" /> {boss.name} · 1 of 19 pulls calibrated</p>
         </div>
         <section className="score-grid" aria-label="Player scores">
-          {scoreKeys.map((key, index) => <article className={`score-card tone-${index}`} key={key}><div className="score-heading"><span>{scoreLabels[key]}</span><small>{key === "performance" ? `${player.parse}th percentile` : key === "attendance" ? player.attendanceLabel : key === "preparation" ? player.prepLabel : `${findings} finding${findings === 1 ? "" : "s"}`}</small></div><div className="score-value">{player.scores[key]}<span>/100</span></div><div className="score-track"><i style={{ width: `${player.scores[key]}%` }} /></div><p className="score-context">Raid average {initialData.raidAverages[key]}</p></article>)}
+          {scoreKeys.map((key, index) => {
+            const value = player.scores[key];
+            const average = initialData.raidAverages[key];
+            const note = key === "performance"
+              ? `${player.parse ?? "—"}th WCL · ${player.ilvlParse ?? "—"}th ilvl`
+              : key === "attendance" ? player.attendanceLabel
+              : key === "preparation" ? player.prepLabel
+              : `${findings} timeline finding${findings === 1 ? "" : "s"}`;
+            const context = key === "preparation"
+              ? initialData.preparationSummary
+              : key === "performance"
+                ? "65% WCL parse · 35% item-level parse"
+                : average === null ? "No trustworthy comparison yet" : `Raid average ${average}`;
+            return <article className={`score-card tone-${index} ${value === null ? "score-unavailable" : ""}`} key={key}><div className="score-heading"><span>{scoreLabels[key]}</span><small>{note}</small></div><div className="score-value">{value === null ? "N/A" : value}{value !== null && <span>/100</span>}</div><div className="score-track"><i style={{ width: `${value ?? 0}%` }} /></div><p className="score-context">{context}</p></article>;
+          })}
         </section>
         <section className="insight-grid">
           <article className="panel takeaways"><div className="panel-heading"><div><p className="eyebrow"><span /> 10-second review</p><h2>Your pull, distilled</h2></div><span className="confidence">High confidence</span></div><div className="takeaway good"><span className="takeaway-icon">✓</span><div><strong>What went well</strong><p>{player.wins.slice(0, 2).join(" · ")}</p></div></div><div className="takeaway watch"><span className="takeaway-icon">!</span><div><strong>One thing to fix</strong><p>{player.focus[0]}</p></div></div></article>
           <article className="panel event-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Key events</p><h2>What shaped the score</h2></div><span className="event-count">{playerEvents.length} relevant</span></div><ul className="events">{playerEvents.slice(0, 4).map((event) => <li key={event.id}><span className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span><div><strong>{event.ability}</strong><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></article>
         </section>
         <section className="lower-grid">
-          <article className="panel trend-panel"><div><p className="eyebrow muted"><span /> Trend</p><h2>Mechanics are moving {player.trend.at(-1)! >= player.trend[0] ? "up" : "down"}</h2><p>Last six evaluated pulls</p></div><div className="trend-bars" aria-label={`Mechanics trend: ${player.trend.join(", ")}`}>{player.trend.map((value, index) => <i key={`${value}-${index}`} style={{ height: `${value}%` }}><span>{value}</span></i>)}</div></article>
-          <article className="panel stat-panel"><p className="eyebrow muted"><span /> Pull facts</p><h2>Evidence, not mystery</h2><div className="fact-grid"><span><strong>{player.deaths}</strong><small>Deaths</small></span><span><strong>{Math.round(player.avoidableDamage / 1000)}k</strong><small>Avoidable</small></span><span><strong>{player.interrupts + player.dispels}</strong><small>Utility</small></span><span><strong>{player.ilvlParse}</strong><small>ilvl parse</small></span></div></article>
+          <article className="panel trend-panel"><div><p className="eyebrow muted"><span /> Trend</p><h2>{player.trend.length > 1 ? `Mechanics are moving ${player.trend.at(-1)! >= player.trend[0] ? "up" : "down"}` : "First mechanics baseline"}</h2><p>{player.trend.length > 1 ? "Last six evaluated pulls" : "One calibrated pull · future raids will build the trend"}</p></div><div className="trend-bars" aria-label={`Mechanics trend: ${player.trend.join(", ")}`}>{player.trend.map((value, index) => <i key={`${value}-${index}`} style={{ height: `${value}%` }}><span>{value}</span></i>)}</div></article>
+          <article className="panel stat-panel"><p className="eyebrow muted"><span /> Pull facts</p><h2>Evidence, not mystery</h2><div className="fact-grid"><span><strong>{player.deaths}</strong><small>Timeline deaths</small></span><span><strong>{player.avoidableDamage >= 1000000 ? `${(player.avoidableDamage / 1000000).toFixed(1)}m` : `${Math.round(player.avoidableDamage / 1000)}k`}</strong><small>Tracked avoidable</small></span><span><strong>{player.interrupts + player.dispels}</strong><small>Dispels / utility</small></span><span><strong>{player.itemLevel ?? "—"}</strong><small>Item level</small></span></div></article>
         </section>
       </section>}
 
       {view === "officer" && <section className="dashboard officer-view" id="officer">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Add raid reports</button></div>
         <div className="section-hero"><div><h1>See the whole roster, clearly.</h1><p>Four independent signals. No hidden overall score, and every rating can be traced back to what happened.</p></div><div className="hierarchy-note"><small>Current scope</small><strong>{initialData.season}</strong><span>Season → Night → Report → Boss → Pull → Player</span></div></div>
-        <section className="officer-summary">{scoreKeys.map((key) => <article key={key}><span>{scoreLabels[key]} average</span><strong>{officerSummary[key]}</strong><small>{officerSummary[key] >= initialData.raidAverages[key] ? "On track" : "Review"}</small></article>)}</section>
-        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>Preparation</th><th>Review</th></tr></thead><tbody>{[...initialData.players].sort((a, b) => b.scores.mechanics - a.scores.mechanics).map((candidate) => { const needsReview = scoreKeys.some((key) => candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{scoreKeys.map((key) => <td key={key}><span className={`table-score ${candidate.scores[key] >= 90 ? "high" : candidate.scores[key] < 80 ? "low" : ""}`}>{candidate.scores[key]}</span></td>)}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
+        <section className="officer-summary">{scoreKeys.map((key) => {
+          const value = officerSummary[key];
+          return <article key={key}><span>{scoreLabels[key]} average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not public" : key === "attendance" ? "First tracked night" : "Real snapshot"}</small></article>;
+        })}</section>
+        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>Preparation</th><th>Review</th></tr></thead><tbody>{[...initialData.players].sort((a, b) => (b.scores.mechanics ?? -1) - (a.scores.mechanics ?? -1)).map((candidate) => { const needsReview = scoreKeys.some((key) => candidate.scores[key] !== null && candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{scoreKeys.map((key) => { const value = candidate.scores[key]; return <td key={key}><span className={`table-score ${value !== null && value >= 90 ? "high" : value !== null && value < 80 ? "low" : ""}`}>{value ?? "—"}</span></td>; })}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
         <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
       </section>}
 
@@ -137,7 +161,7 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
         </section>
       </section>}
 
-      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Add one report or a whole raid week</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste one Warcraft Logs report URL per line. Reports are normalized into the season hierarchy, then evaluated against active boss rules.</p><form onSubmit={importReports}><label>Report URLs<textarea autoFocus value={reportUrls} onChange={(event) => setReportUrls(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345\nhttps://www.warcraftlogs.com/reports/XYZ98765"} required /></label><div className="import-path"><span>Season</span><b>→</b><span>Raid night</span><b>→</b><span>Report</span><b>→</b><span>Boss</span><b>→</b><span>Pull</span><b>→</b><span>Player</span></div><button className="primary-button" disabled={busy} type="submit">{busy ? "Importing…" : "Import and analyze"}</button>{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form><small className="credential-note">Public reports use the live Warcraft Logs API when server credentials are connected. Until then, valid URLs exercise the full storage flow with clearly marked demo analysis.</small></section></div>}
+      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Add one report or a whole raid week</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste one Warcraft Logs report URL per line. Reports are normalized into the season hierarchy, then evaluated against active boss rules.</p><form onSubmit={importReports}><label>Report URLs<textarea autoFocus value={reportUrls} onChange={(event) => setReportUrls(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345\nhttps://www.warcraftlogs.com/reports/XYZ98765"} required /></label><div className="import-path"><span>Season</span><b>→</b><span>Raid night</span><b>→</b><span>Report</span><b>→</b><span>Boss</span><b>→</b><span>Pull</span><b>→</b><span>Player</span></div><button className="primary-button" disabled={busy} type="submit">{busy ? "Importing…" : "Import and analyze"}</button>{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form><small className="credential-note">The Aug 21 report shown behind this dialog is a verified real-data snapshot. New URLs will replace it automatically once the live Warcraft Logs connection is enabled.</small></section></div>}
     </main>
   );
 }

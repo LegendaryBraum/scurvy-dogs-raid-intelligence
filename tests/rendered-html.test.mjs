@@ -16,7 +16,9 @@ test("server-renders the player-first dashboard", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Scurvy Dogs/);
-  assert.match(html, /Good pull/);
+  assert.match(html, /Clear next step/);
+  assert.match(html, /Real raid snapshot/);
+  assert.match(html, /Nek.zali the Soulcoiler/);
   assert.match(html, /Mechanics/);
   assert.match(html, /Performance/);
   assert.match(html, /Attendance/);

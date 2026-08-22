@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { demoData } from "../../../lib/demo-data";
+import { raidData } from "../../../lib/raid-data";
 import { getSharedPlayer } from "../../../lib/share";
 
 type Props = { params: Promise<{ token: string }> };
@@ -22,7 +22,7 @@ export default async function SharedPlayerPage({ params }: Props) {
   const player = await getSharedPlayer(token);
   if (!player) notFound();
   const scores = [
-    ["Mechanics", player.scores.mechanics, "Clean execution"], ["Performance", player.scores.performance, `${player.parse}th percentile`],
+    ["Mechanics", player.scores.mechanics, "Wipefest mechanics"], ["Performance", player.scores.performance, player.parse === null ? "Not available" : `${player.parse}th percentile`],
     ["Attendance", player.scores.attendance, player.attendanceLabel], ["Preparation", player.scores.preparation, player.prepLabel],
   ] as const;
   return (
@@ -32,13 +32,13 @@ export default async function SharedPlayerPage({ params }: Props) {
         <span className="privacy-badge">Player-only view</span>
       </header>
       <section className="private-report">
-        <p className="eyebrow"><span /> {demoData.raidNight}</p>
+        <p className="eyebrow"><span /> {raidData.raidNight}</p>
         <div className="private-hero">
           <div><h1>{player.name}&apos;s raid review</h1><p>{player.summary}</p></div>
           <div className="player-seal"><strong>{player.name.slice(0, 2).toUpperCase()}</strong><span>{player.spec}<br />{player.className}</span></div>
         </div>
         <section className="score-grid private-scores" aria-label={`${player.name}'s scores`}>
-          {scores.map(([label, value, note], index) => <article className={`score-card tone-${index}`} key={label}><div className="score-heading"><span>{label}</span><small>{note}</small></div><div className="score-value">{value}<span>/100</span></div><div className="score-track"><i style={{ width: `${value}%` }} /></div></article>)}
+          {scores.map(([label, value, note], index) => <article className={`score-card tone-${index} ${value === null ? "score-unavailable" : ""}`} key={label}><div className="score-heading"><span>{label}</span><small>{note}</small></div><div className="score-value">{value ?? "N/A"}{value !== null && <span>/100</span>}</div><div className="score-track"><i style={{ width: `${value ?? 0}%` }} /></div></article>)}
         </section>
         <section className="private-insights">
           <article className="panel"><p className="eyebrow"><span /> What went well</p><h2>Keep doing this</h2><ul className="plain-findings">{player.wins.map((win) => <li key={win}><span>✓</span>{win}</li>)}</ul></article>
@@ -46,7 +46,7 @@ export default async function SharedPlayerPage({ params }: Props) {
         </section>
         <section className="anonymous-context panel">
           <div><p className="eyebrow muted"><span /> Anonymous context</p><h2>How this compares</h2><p>Only raid averages are shown. No other player names or individual reports are included.</p></div>
-          <div className="average-comparison"><span>You <strong>{player.scores.mechanics}</strong></span><i><b style={{ width: `${player.scores.mechanics}%` }} /></i><span>Raid average <strong>{demoData.raidAverages.mechanics}</strong></span><i className="average"><b style={{ width: `${demoData.raidAverages.mechanics}%` }} /></i></div>
+          <div className="average-comparison"><span>You <strong>{player.scores.mechanics}</strong></span><i><b style={{ width: `${player.scores.mechanics ?? 0}%` }} /></i><span>Raid average <strong>{raidData.raidAverages.mechanics}</strong></span><i className="average"><b style={{ width: `${raidData.raidAverages.mechanics ?? 0}%` }} /></i></div>
         </section>
         <footer className="private-footer">This link contains only {player.name}&apos;s detail and anonymous raid context.</footer>
       </section>
