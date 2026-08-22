@@ -4,7 +4,7 @@ An internal raid-analysis MVP built around a simple promise: a player should und
 
 ## MVP capabilities
 
-- Accepts one or multiple Warcraft Logs report URLs.
+- Accepts one or multiple full-run Warcraft Logs report URLs and previews the raid contents before saving.
 - Stores the hierarchy `Season → Raid Night → Report → Boss → Pull → Player` in D1.
 - Keeps encounter rules separate from the generic analysis engine.
 - Scores Mechanics, DPS/HPS Performance, Attendance, and Preparation independently.
@@ -19,7 +19,7 @@ npm install
 npm run dev
 ```
 
-Add Warcraft Logs server credentials to a local `.env` using `.env.example` as the template. Public reports are imported live when credentials are present. Without credentials, valid report URLs use the clearly marked demo adapter so the full persistence and privacy flow remains testable.
+Add Warcraft Logs server credentials to a local `.env` using `.env.example` as the template. Public and unlisted reports are read by the server-side importer; the secret is never sent to the browser. Without credentials, the verified Aug 21 snapshot remains available and the live import endpoint returns a clear connection-required message instead of substituting demo data.
 
 ## Verification
 

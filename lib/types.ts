@@ -63,6 +63,8 @@ export type DashboardData = {
   pulls: { id: string; bossId: string; label: string; killed: boolean; duration: string; difficulty: string }[];
   players: PlayerSnapshot[];
   events: RaidEvent[];
+  pullPlayers?: Record<string, PlayerSnapshot[]>;
+  pullEvents?: Record<string, RaidEvent[]>;
   rules: MechanicRule[];
   raidAverages: Record<ScoreKey, ScoreValue>;
   dataSource?: {
@@ -72,4 +74,5 @@ export type DashboardData = {
     wipefestUrl?: string;
   };
   preparationSummary?: string;
+  preparationRaid?: { flasks: number | null; food: number | null; total: number | null };
 };

@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { DashboardData, MechanicRule, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
+type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[] };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
 
-export function RaidApp({ initialData }: { initialData: DashboardData }) {
+export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
+  const [initialData, setInitialData] = useState(fallbackData);
   const [view, setView] = useState<View>("player");
   const [activeScore, setActiveScore] = useState<ScoreKey | null>(null);
   const [playerId, setPlayerId] = useState(initialData.players[0].id);
@@ -16,46 +18,75 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
   const [rules, setRules] = useState(initialData.rules);
   const [importOpen, setImportOpen] = useState(false);
   const [reportUrls, setReportUrls] = useState("");
+  const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
   const [importStatus, setImportStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [ruleStatus, setRuleStatus] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const player = initialData.players.find((candidate) => candidate.id === playerId) ?? initialData.players[0];
+  useEffect(() => {
+    let active = true;
+    fetch("/api/dashboard")
+      .then(async (response) => response.ok ? response.json() as Promise<{ data: DashboardData }> : null)
+      .then((result) => {
+        if (!active || !result?.data?.pulls?.length || !result.data.players?.length) return;
+        setInitialData(result.data);
+        setPlayerId(result.data.players[0].id);
+        setBossId(result.data.bosses[0].id);
+        setPullId(result.data.pulls[0].id);
+        setRules(result.data.rules);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
   const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
-  const playerEvents = initialData.events.filter((event) => event.playerId === player.id);
+  const activePlayers = initialData.pullPlayers?.[pull?.id ?? pullId] ?? initialData.players;
+  const player = activePlayers.find((candidate) => candidate.id === playerId) ?? activePlayers[0] ?? initialData.players[0];
+  const activeEvents = initialData.pullEvents?.[pull?.id ?? pullId] ?? initialData.events;
+  const playerEvents = activeEvents.filter((event) => event.playerId === player.id);
   const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
-  const mechanicsScore = player.scores.mechanics ?? 0;
-  const matchedRules = initialData.rules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
+  const mechanicsScore = player.scores.mechanics;
+  const matchedRules = rules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
 
   const officerSummary = useMemo(() => {
     const average = (key: ScoreKey) => {
-      const values = initialData.players.map((candidate) => candidate.scores[key]).filter((value): value is number => value !== null);
+      const values = activePlayers.map((candidate) => candidate.scores[key]).filter((value): value is number => value !== null);
       return values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
     };
     return { mechanics: average("mechanics"), performance: average("performance"), attendance: average("attendance"), preparation: average("preparation") };
-  }, [initialData.players]);
+  }, [activePlayers]);
 
   function chooseBoss(nextBoss: string) {
     setBossId(nextBoss);
     setPullId(initialData.pulls.find((candidate) => candidate.bossId === nextBoss)?.id ?? initialData.pulls[0].id);
   }
 
-  async function importReports(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setImportStatus("Reading report data…");
+  async function previewReports(event: FormEvent) {
+    event.preventDefault(); setBusy(true); setImportStatus("Checking the full report with Warcraft Logs…"); setImportPreviews([]);
     try {
-      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: reportUrls, season: initialData.season }) });
-      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; sourceMode?: string }[]; liveApiConfigured?: boolean };
+      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", urls: reportUrls, season: initialData.season }) });
+      const result = await response.json() as { error?: string; reports?: ImportPreview[]; needsConnection?: boolean };
+      if (!response.ok) throw new Error(result.needsConnection ? "The one-time Warcraft Logs connection still needs to be completed before the first import." : result.error ?? "Preview failed.");
+      setImportPreviews(result.reports ?? []);
+      setImportStatus("Review the raid, bosses, pulls, and roster count below. Nothing has been saved yet.");
+    } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
+    finally { setBusy(false); }
+  }
+
+  async function confirmImport() {
+    setBusy(true); setImportStatus("Importing every boss pull and applying active rules…");
+    try {
+      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season }) });
+      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[] };
       if (!response.ok) throw new Error(result.error ?? "Import failed.");
-      const imported = result.reports?.filter((report) => report.status === "imported") ?? [];
-      const pulls = imported.reduce((total, report) => total + (report.pulls ?? 0), 0);
-      const demoMode = imported.some((report) => report.sourceMode === "demo");
-      setImportStatus(demoMode
-        ? `${imported.length} URL stored through the demo adapter. The verified Aug 21 snapshot remains on screen.`
-        : `${imported.length} report${imported.length === 1 ? "" : "s"} stored with ${pulls} pulls from Warcraft Logs.`);
-      setReportUrls("");
+      const stored = result.reports ?? [];
+      const pulls = stored.reduce((total, report) => total + (report.pulls ?? 0), 0);
+      const bosses = stored.reduce((total, report) => total + (report.bosses ?? 0), 0);
+      setImportStatus(pulls ? `${pulls} pulls across ${bosses} bosses imported. Opening the new raid dashboard…` : "This report was already imported. Opening its dashboard…");
+      window.setTimeout(() => window.location.reload(), 700);
     } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
     finally { setBusy(false); }
   }
@@ -63,7 +94,7 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
   async function createShare() {
     setBusy(true); setShareStatus("Creating a player-only link…");
     try {
-      const response = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId, bossId, pullId: pull?.id }) });
+      const response = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId: player.id, bossId, pullId: pull?.id }) });
       const result = await response.json() as { error?: string; url?: string };
       if (!response.ok || !result.url) throw new Error(result.error ?? "Share link failed.");
       const fullUrl = new URL(result.url, window.location.origin).href;
@@ -106,19 +137,19 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
 
       {view === "player" && <section className="dashboard" id="dashboard">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy} onClick={createShare} type="button">Share private view</button></div>
-        <div className="hero-row"><div><h1>{mechanicsScore >= 90 ? "Good pull" : mechanicsScore >= 80 ? "Solid pull" : "Clear next step"}, {player.name}.</h1><p>{player.summary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
+        <div className="hero-row"><div><h1>{mechanicsScore === null ? "Ready for calibration" : mechanicsScore >= 90 ? "Good pull" : mechanicsScore >= 80 ? "Solid pull" : "Clear next step"}, {player.name}.</h1><p>{player.summary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
         {initialData.dataSource && <div className="status-line data-source-line"><span /><a href={initialData.dataSource.reportUrl} target="_blank" rel="noreferrer">{initialData.dataSource.detail}</a>{initialData.dataSource.wipefestUrl && <a href={initialData.dataSource.wipefestUrl} target="_blank" rel="noreferrer">Open Wipefest</a>}</div>}
         {shareStatus && <div className="status-line" role="status"><span />{shareStatus}</div>}
         <div className="filters" aria-label="Dashboard filters">
-          <label>Player<select value={playerId} onChange={(event) => setPlayerId(event.target.value)}>{initialData.players.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
+          <label>Player<select value={player.id} onChange={(event) => setPlayerId(event.target.value)}>{activePlayers.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
           <label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
-          <p><span className="live-dot" /> {boss.name} · 1 of 19 pulls calibrated</p>
+          <p><span className="live-dot" /> {boss.name} · {rules.filter((rule) => rule.bossId === boss.id).length} active rules · {pullOptions.length} pulls</p>
         </div>
         <section className="score-grid" aria-label="Player scores">
           {scoreKeys.map((key, index) => {
             const value = player.scores[key];
-            const average = initialData.raidAverages[key];
+            const average = officerSummary[key];
             const note = key === "performance"
               ? `${player.parse ?? "—"}th WCL · ${player.ilvlParse ?? "—"}th ilvl`
               : key === "attendance" ? player.attendanceLabel
@@ -136,12 +167,12 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
         {activeScore && <section aria-live="polite" className={`panel score-detail-panel detail-${activeScore}`} id="score-detail-panel">
           <div className="score-detail-heading"><div><p className="eyebrow"><span /> {scoreLabels[activeScore]} detail</p><h2>{activeScore === "mechanics" ? "What changed the mechanic score" : activeScore === "performance" ? "How the performance score was built" : activeScore === "attendance" ? "What attendance currently covers" : "What preparation data is available"}</h2><p>{activeScore === "mechanics" ? "Actual Wipefest scoring, timeline events, and the matching encounter rules for this player." : activeScore === "performance" ? `Warcraft Logs ${player.role === "Healer" ? "healing" : "damage"} parses from this exact pull, shown with item-level context.` : activeScore === "attendance" ? "This is the first tracked raid night, so attendance is factual but not yet a meaningful trend." : "Wipefest exposed raid-level preparation, but not a trustworthy individual breakdown on the public report."}</p></div><button aria-label="Close score details" onClick={() => setActiveScore(null)} type="button">×</button></div>
           {activeScore === "mechanics" && <>
-            <div className="score-detail-stats"><span><small>Player score</small><strong>{player.scores.mechanics ?? "N/A"}</strong><em>Wipefest</em></span><span><small>Raid average</small><strong>{initialData.raidAverages.mechanics ?? "N/A"}</strong><em>20 players</em></span><span><small>Timeline findings</small><strong>{playerEvents.length}</strong><em>{findings} need review</em></span><span><small>Matched rules</small><strong>{matchedRules.length}</strong><em>Spell-ID based</em></span></div>
+            <div className="score-detail-stats"><span><small>Player score</small><strong>{player.scores.mechanics ?? "N/A"}</strong><em>{initialData.dataSource?.label === "Live Warcraft Logs import" ? "Configured rules" : "Wipefest"}</em></span><span><small>Raid average</small><strong>{officerSummary.mechanics ?? "N/A"}</strong><em>{activePlayers.length} players</em></span><span><small>Timeline findings</small><strong>{playerEvents.length}</strong><em>{findings} need review</em></span><span><small>Matched rules</small><strong>{matchedRules.length}</strong><em>Spell-ID based</em></span></div>
             <div className="score-detail-columns"><div><h3>Events from this pull</h3><ul className="events detail-event-list">{playerEvents.map((event) => <li key={`detail-${event.id}`}><span className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span><div><strong>{event.ability}</strong><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></div><div><h3>Rules that matched</h3><div className="detail-rule-list">{matchedRules.map((rule) => <div key={`detail-${rule.id}`}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><p><strong>{rule.name}</strong><small>Spell {rule.spellId} · weight {rule.weight}</small></p></div>)}{matchedRules.length === 0 && <p className="detail-empty">No configured rule matched this player&apos;s displayed timeline events.</p>}</div></div></div>
           </>}
           {activeScore === "performance" && <><div className="score-detail-stats"><span><small>WCL parse</small><strong>{player.parse ?? "N/A"}</strong><em>{player.role === "Healer" ? "Healing" : "Damage"}</em></span><span><small>Item-level parse</small><strong>{player.ilvlParse ?? "N/A"}</strong><em>Item level {player.itemLevel ?? "—"}</em></span><span><small>Performance</small><strong>{player.scores.performance ?? "N/A"}</strong><em>Transparent blend</em></span><span><small>Active pull</small><strong>{pull?.duration}</strong><em>{pull?.label}</em></span></div><div className="detail-explanation"><strong>The current formula</strong><p>Performance = 65% Warcraft Logs parse + 35% item-level parse. It keeps raw output visible while adding context for the gear available to the player. This score does not affect Mechanics, Attendance, or Preparation.</p></div></>}
-          {activeScore === "attendance" && <><div className="score-detail-stats"><span><small>Tracked nights</small><strong>1/1</strong><em>Aug 21</em></span><span><small>Pull presence</small><strong>Yes</strong><em>Calibration pull</em></span><span><small>Attendance</small><strong>{player.scores.attendance ?? "N/A"}</strong><em>First baseline</em></span><span><small>Trend confidence</small><strong>Low</strong><em>More nights needed</em></span></div><div className="detail-explanation"><strong>Why this is 100 today</strong><p>{player.name} was present for the only raid night currently loaded. This will become a useful percentage only after additional scheduled nights are imported.</p></div></>}
-          {activeScore === "preparation" && <><div className="score-detail-stats"><span><small>Individual score</small><strong>N/A</strong><em>Not public</em></span><span><small>Raid flasks</small><strong>16/20</strong><em>Wipefest</em></span><span><small>Raid food</small><strong>13/20</strong><em>Wipefest</em></span><span><small>Player penalty</small><strong>None</strong><em>No guessing</em></span></div><div className="detail-explanation"><strong>What we know</strong><p>{initialData.preparationSummary} The app intentionally leaves this player score blank rather than assigning the raid&apos;s preparation problem to every individual.</p></div></>}
+          {activeScore === "attendance" && <><div className="score-detail-stats"><span><small>Tracked nights</small><strong>1/1</strong><em>{initialData.raidNight}</em></span><span><small>Pull presence</small><strong>Yes</strong><em>Selected pull</em></span><span><small>Attendance</small><strong>{player.scores.attendance ?? "N/A"}</strong><em>First baseline</em></span><span><small>Trend confidence</small><strong>Low</strong><em>More nights needed</em></span></div><div className="detail-explanation"><strong>Why this is 100 today</strong><p>{player.name} was present for this imported raid night. This becomes a meaningful percentage after additional scheduled nights are imported.</p></div></>}
+          {activeScore === "preparation" && <><div className="score-detail-stats"><span><small>Individual score</small><strong>{player.scores.preparation ?? "N/A"}</strong><em>Not assumed</em></span><span><small>Raid flasks</small><strong>{initialData.preparationRaid?.flasks ?? "N/A"}{initialData.preparationRaid?.flasks !== null && initialData.preparationRaid?.flasks !== undefined && initialData.preparationRaid.total ? `/${initialData.preparationRaid.total}` : ""}</strong><em>Available source</em></span><span><small>Raid food</small><strong>{initialData.preparationRaid?.food ?? "N/A"}{initialData.preparationRaid?.food !== null && initialData.preparationRaid?.food !== undefined && initialData.preparationRaid.total ? `/${initialData.preparationRaid.total}` : ""}</strong><em>Available source</em></span><span><small>Player penalty</small><strong>None</strong><em>No guessing</em></span></div><div className="detail-explanation"><strong>What we know</strong><p>{initialData.preparationSummary} The app intentionally leaves this player score blank rather than assigning incomplete raid data to an individual.</p></div></>}
         </section>}
         <section className="insight-grid">
           <article className="panel takeaways"><div className="panel-heading"><div><p className="eyebrow"><span /> 10-second review</p><h2>Your pull, distilled</h2></div><span className="confidence">High confidence</span></div><div className="takeaway good"><span className="takeaway-icon">✓</span><div><strong>What went well</strong><p>{player.wins.slice(0, 2).join(" · ")}</p></div></div><div className="takeaway watch"><span className="takeaway-icon">!</span><div><strong>One thing to fix</strong><p>{player.focus[0]}</p></div></div></article>
@@ -160,7 +191,7 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
           const value = officerSummary[key];
           return <article key={key}><span>{scoreLabels[key]} average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not public" : key === "attendance" ? "First tracked night" : "Real snapshot"}</small></article>;
         })}</section>
-        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>Preparation</th><th>Review</th></tr></thead><tbody>{[...initialData.players].sort((a, b) => (b.scores.mechanics ?? -1) - (a.scores.mechanics ?? -1)).map((candidate) => { const needsReview = scoreKeys.some((key) => candidate.scores[key] !== null && candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{scoreKeys.map((key) => { const value = candidate.scores[key]; return <td key={key}><span className={`table-score ${value !== null && value >= 90 ? "high" : value !== null && value < 80 ? "low" : ""}`}>{value ?? "—"}</span></td>; })}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
+        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>Preparation</th><th>Review</th></tr></thead><tbody>{[...activePlayers].sort((a, b) => (b.scores.mechanics ?? -1) - (a.scores.mechanics ?? -1)).map((candidate) => { const needsReview = scoreKeys.some((key) => candidate.scores[key] !== null && candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{scoreKeys.map((key) => { const value = candidate.scores[key]; return <td key={key}><span className={`table-score ${value !== null && value >= 90 ? "high" : value !== null && value < 80 ? "low" : ""}`}>{value ?? "—"}</span></td>; })}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
         <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
       </section>}
 
@@ -174,7 +205,7 @@ export function RaidApp({ initialData }: { initialData: DashboardData }) {
         </section>
       </section>}
 
-      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Add one report or a whole raid week</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste one Warcraft Logs report URL per line. Reports are normalized into the season hierarchy, then evaluated against active boss rules.</p><form onSubmit={importReports}><label>Report URLs<textarea autoFocus value={reportUrls} onChange={(event) => setReportUrls(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345\nhttps://www.warcraftlogs.com/reports/XYZ98765"} required /></label><div className="import-path"><span>Season</span><b>→</b><span>Raid night</span><b>→</b><span>Report</span><b>→</b><span>Boss</span><b>→</b><span>Pull</span><b>→</b><span>Player</span></div><button className="primary-button" disabled={busy} type="submit">{busy ? "Importing…" : "Import and analyze"}</button>{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form><small className="credential-note">The Aug 21 report shown behind this dialog is a verified real-data snapshot. New URLs will replace it automatically once the live Warcraft Logs connection is enabled.</small></section></div>}
+      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Review the full run before importing</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste the normal full-run report link from Warcraft Logs. The app checks the raid, roster, bosses, and every encounter pull before anything is saved.</p><form onSubmit={previewReports}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => { setReportUrls(event.target.value); setImportPreviews([]); setImportStatus(""); }} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Review contents</span><b>→</b><span>Confirm import</span><b>→</b><span>Open dashboard</span></div>{importPreviews.length === 0 && <button className="primary-button" disabled={busy} type="submit">{busy ? "Checking report…" : "Review full run"}</button>}{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form>{importPreviews.length > 0 && <div className="import-review">{importPreviews.map((preview) => <article key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Boss pulls</small></span><span><strong>{preview.bosses.length}</strong><small>Bosses</small></span><span><strong>{preview.playerCount}</strong><small>Players found</small></span></div><ul>{preview.bosses.map((bossPreview) => <li key={bossPreview.name}><strong>{bossPreview.name}</strong><span>{bossPreview.pulls} pull{bossPreview.pulls === 1 ? "" : "s"}{bossPreview.kills ? ` · ${bossPreview.kills} kill${bossPreview.kills === 1 ? "" : "s"}` : ""}</span></li>)}</ul></article>)}<button className="primary-button confirm-import" disabled={busy} onClick={confirmImport} type="button">{busy ? "Importing full run…" : "Confirm and import everything"}</button><button className="review-again" disabled={busy} onClick={() => { setImportPreviews([]); setImportStatus(""); }} type="button">Use a different link</button></div>}<small className="credential-note">The connection reads public or unlisted reports from the URL you provide. Private Warcraft Logs reports will require account authorization in a later step.</small></section></div>}
     </main>
   );
 }

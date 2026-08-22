@@ -123,9 +123,10 @@ function buildPlayer(seed: PlayerSeed): PlayerSnapshot {
 const players = playerSeeds.map(buildPlayer);
 const events: RaidEvent[] = playerSeeds.flatMap((seed) => {
   const fact = pullFacts[seed.id];
+  const [warningTime, warningSpellId, warningAbility, warningDetail, warningAmount] = fact.warning;
   const playerEvents = [
     makeEvent(`${seed.id}-death`, seed.id, fact.death, "death"),
-    makeEvent(`${seed.id}-warning`, seed.id, fact.warning, "warning", fact.warning[4]),
+    makeEvent(`${seed.id}-warning`, seed.id, [warningTime, warningSpellId, warningAbility, warningDetail], "warning", warningAmount),
   ];
   if (fact.success) playerEvents.push(makeEvent(`${seed.id}-success`, seed.id, fact.success, "success"));
   if (fact.utility) playerEvents.push(makeEvent(`${seed.id}-utility`, seed.id, fact.utility, "utility"));
@@ -168,4 +169,5 @@ export const raidData: DashboardData = {
     wipefestUrl: "https://www.wipefest.gg/report/YtD1kgCwLv4cJT7n/fight/13?gameVersion=warcraft-live",
   },
   preparationSummary: "Raid-level result: 16/20 flasks, 13/20 food, 5.2 enchants and 2.1 gems on average. Individual preparation was not exposed publicly.",
+  preparationRaid: { flasks: 16, food: 13, total: 20 },
 };

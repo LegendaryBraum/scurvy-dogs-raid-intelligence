@@ -1,16 +1,20 @@
 import { ensureSchema } from "../db/runtime";
 import { raidData } from "./raid-data";
+import { loadLatestDashboardData } from "./dashboard-data";
 import type { PlayerSnapshot } from "./types";
 
 export async function getSharedPlayer(token: string): Promise<PlayerSnapshot | null> {
   try {
     const db = await ensureSchema();
     const row = await db.prepare(`
-      SELECT p.name, p.realm, p.class_name AS className, p.role, s.expires_at AS expiresAt
+      SELECT p.id, p.name, p.realm, p.class_name AS className, p.role, s.pull_id AS pullId, s.expires_at AS expiresAt
       FROM shares s JOIN players p ON p.id = s.player_id
       WHERE s.token = ?
-    `).bind(token).first<{ name: string; realm: string; className: string; role: string; expiresAt: string | null }>();
+    `).bind(token).first<{ id: string; name: string; realm: string; className: string; role: string; pullId: string | null; expiresAt: string | null }>();
     if (!row || (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now())) return null;
+    const dashboard = await loadLatestDashboardData();
+    const imported = row.pullId ? dashboard?.pullPlayers?.[row.pullId]?.find((player) => player.id === row.id) : undefined;
+    if (imported) return imported;
     const snapshot = raidData.players.find((player) => player.name.toLowerCase() === row.name.toLowerCase());
     if (snapshot) return snapshot;
     return {

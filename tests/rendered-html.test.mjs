@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render(pathname = "/") {
+async function render(pathname = "/", init = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
-  return worker.fetch(new Request(`http://localhost${pathname}`, { headers: { accept: "text/html", host: "localhost" } }), {
+  return worker.fetch(new Request(`http://localhost${pathname}`, { ...init, headers: { accept: "text/html", host: "localhost", ...init.headers } }), {
     ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
   }, { waitUntil() {}, passThroughOnException() {} });
 }
@@ -27,9 +27,11 @@ test("server-renders the player-first dashboard", async () => {
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview/);
 });
 
-test("keeps configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, scoring, schema, share] = await Promise.all([
+test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
+  const [app, importer, dashboard, scoring, schema, share] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/dashboard-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/scoring.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/share/[token]/page.tsx", import.meta.url), "utf8"),
@@ -38,6 +40,13 @@ test("keeps configuration, scoring, and privacy as separate product concerns", a
   assert.match(app, /Officer workspace/);
   assert.match(app, /score-detail-panel/);
   assert.match(app, /aria-expanded/);
+  assert.match(app, /Review full run/);
+  assert.match(app, /Confirm and import everything/);
+  assert.match(importer, /fetchReportPreview/);
+  assert.match(importer, /fetchFightContextEvents/);
+  assert.doesNotMatch(importer, /demoOverview|sourceMode = "demo"/);
+  assert.match(dashboard, /pullPlayers/);
+  assert.match(dashboard, /Live Warcraft Logs import/);
   assert.match(scoring, /scoreMechanics/);
   assert.match(scoring, /scorePerformance/);
   assert.match(schema, /mechanicRules/);

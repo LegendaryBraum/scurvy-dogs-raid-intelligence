@@ -222,6 +222,22 @@ tbody tr:last-child td { border-bottom: 0; }
 .import-path { margin: 14px 0 0; display: flex; align-items: center; gap: 6px; color: #77898e; font-size: 7px; font-weight: 800; text-transform: uppercase; }
 .import-path b { color: var(--teal); }
 .credential-note { display: block; margin-top: 15px; color: #889699; font-size: 8px; line-height: 1.5; }
+.import-review { margin-top: 16px; }
+.import-review > article { padding: 16px; border: 1px solid #cddfdb; border-radius: 11px; background: #fff; }
+.import-review-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.import-review-heading small, .import-review-heading strong { display: block; }
+.import-review-heading small { color: #7c8e92; font-size: 8px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.import-review-heading strong { margin-top: 4px; color: #29464e; font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
+.import-review-heading > span { padding: 4px 7px; border-radius: 20px; color: #28745f; background: #e5f2ee; font-size: 7px; font-weight: 900; text-transform: uppercase; }
+.import-review-totals { margin-top: 13px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.import-review-totals > span { padding: 9px; display: grid; gap: 2px; border-radius: 8px; background: #f0f6f4; }
+.import-review-totals strong { color: #2d5058; font-family: Georgia, serif; font-size: 20px; font-weight: 500; }
+.import-review-totals small { color: #788b90; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.import-review ul { max-height: 145px; margin: 12px 0 0; padding: 0; overflow: auto; list-style: none; }
+.import-review li { padding: 7px 1px; display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #edf1f0; color: #65777c; font-size: 9px; }
+.import-review li strong { color: #344e55; }
+.confirm-import { margin-top: 12px; }
+.review-again { width: 100%; margin-top: 7px; padding: 8px; border: 0; color: #63777c; background: transparent; font-size: 8px; font-weight: 800; cursor: pointer; }
 
 .private-shell { min-height: 100vh; background: #f3f7f6; }
 .private-topbar { height: 72px; padding: 0 clamp(20px, 5vw, 72px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #fafcfb; }

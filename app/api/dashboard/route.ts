@@ -1,0 +1,13 @@
+import { loadLatestDashboardData } from "../../../lib/dashboard-data";
+
+export const runtime = "edge";
+
+export async function GET() {
+  try {
+    const data = await loadLatestDashboardData();
+    if (!data) return Response.json({ error: "No live report has been imported yet." }, { status: 404 });
+    return Response.json({ data });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "The live dashboard could not be loaded." }, { status: 500 });
+  }
+}
