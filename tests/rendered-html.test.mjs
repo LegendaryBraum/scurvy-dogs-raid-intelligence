@@ -23,6 +23,7 @@ test("server-renders the player-first dashboard", async () => {
   assert.match(html, /Performance/);
   assert.match(html, /Attendance/);
   assert.match(html, /Preparation/);
+  assert.match(html, /View details/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview/);
 });
 
@@ -35,6 +36,8 @@ test("keeps configuration, scoring, and privacy as separate product concerns", a
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
+  assert.match(app, /score-detail-panel/);
+  assert.match(app, /aria-expanded/);
   assert.match(scoring, /scoreMechanics/);
   assert.match(scoring, /scorePerformance/);
   assert.match(schema, /mechanicRules/);
