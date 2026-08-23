@@ -70,6 +70,8 @@ function compactAmount(amount: number) {
 }
 
 function candidateEvents(rule: StoredRule, eventPages: Map<number, unknown[]>, contextEvents: RuleContextEvents) {
+  const direct = eventPages.get(rule.spell_id) ?? [];
+  if (direct.length) return direct.filter((event) => eventMatchesType(event, rule.event_type));
   if (rule.event_type === "dispel") {
     return contextEvents.dispels.filter((event) => eventExtraSpellId(event) === rule.spell_id || eventSpellId(event) === rule.spell_id);
   }
@@ -79,7 +81,7 @@ function candidateEvents(rule: StoredRule, eventPages: Map<number, unknown[]>, c
   if (rule.event_type === "death") {
     return contextEvents.deaths.filter((event) => eventSpellId(event) === rule.spell_id);
   }
-  return (eventPages.get(rule.spell_id) ?? []).filter((event) => eventMatchesType(event, rule.event_type));
+  return direct.filter((event) => eventMatchesType(event, rule.event_type));
 }
 
 export async function analyzeFightRules({

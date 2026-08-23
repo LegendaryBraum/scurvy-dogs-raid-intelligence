@@ -1,6 +1,6 @@
 import { ensureSchema, getRuntimeEnv } from "../../../db/runtime";
 import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
-import { fetchFightAnalysisEvents, fetchReportOverview } from "../../../lib/warcraft-logs";
+import { fetchReportOverview, fetchRuleEvents, groupRuleEventsByAbility } from "../../../lib/warcraft-logs";
 
 export const runtime = "edge";
 
@@ -52,6 +52,10 @@ export async function POST(request: Request) {
       const { report, token } = await fetchReportOverview(code, credentials);
       const actors = report.masterData?.actors ?? [];
       const abilities = new Map((report.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
+      const scoredSpellIds = ruleResult.results
+        .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
+        .map((rule) => rule.spell_id);
+      const reportRuleEvents = await fetchRuleEvents(code, storedPulls.map((pull) => pull.fight_id), scoredSpellIds, token);
       for (const storedPull of storedPulls) {
         const fight = report.fights.find((candidate) => candidate.id === storedPull.fight_id);
         if (!fight) continue;
@@ -67,12 +71,11 @@ export async function POST(request: Request) {
           participantIds.set(actorId, player.player_id);
           participantRoles.set(player.player_id, player.role);
         }
-        const scoredSpellIds = ruleResult.results
-          .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
-          .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
-          .map((rule) => rule.spell_id);
-        const analysisEvents = await fetchFightAnalysisEvents(code, fight.id, scoredSpellIds, token);
-        const contextEvents = { deaths: analysisEvents.deaths, interrupts: analysisEvents.interrupts, dispels: analysisEvents.dispels };
+        const fightRuleEvents = reportRuleEvents.filter((raw) => {
+          const timestamp = Number(raw && typeof raw === "object" ? (raw as Record<string, unknown>).timestamp : 0);
+          return timestamp >= fight.startTime && timestamp <= fight.endTime;
+        });
+        const contextEvents = { deaths: [], interrupts: [], dispels: [] };
         const result = await analyzeFightRules({
           db,
           reportCode: code,
@@ -84,7 +87,7 @@ export async function POST(request: Request) {
           participantRoles,
           abilities,
           contextEvents,
-          eventPages: analysisEvents.eventsByAbility,
+          eventPages: groupRuleEventsByAbility(fightRuleEvents, scoredSpellIds),
           resetExisting: true,
         });
         events += result.eventRows;

@@ -1,6 +1,8 @@
 import { ensureSchema, getRuntimeEnv, makeId } from "../../../db/runtime";
 import {
-  fetchFightAnalysisEvents,
+  fetchFightContextEvents,
+  fetchRuleEvents,
+  groupRuleEventsByAbility,
   fetchReportOverview,
   fetchReportPreview,
   parseRankingRows,
@@ -189,8 +191,10 @@ export async function POST(request: Request) {
           .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
           .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
           .map((rule) => rule.spell_id);
-        const analysisEvents = await fetchFightAnalysisEvents(requested.code, fight.id, scoredSpellIds, token);
-        const contextEvents = { deaths: analysisEvents.deaths, interrupts: analysisEvents.interrupts, dispels: analysisEvents.dispels };
+        const [ruleEvents, contextEvents] = await Promise.all([
+          fetchRuleEvents(requested.code, [fight.id], scoredSpellIds, token),
+          fetchFightContextEvents(requested.code, fight.id, token),
+        ]);
 
         const addContextEvents = async (kind: "death" | "interrupt" | "dispel", values: unknown[]) => {
           for (const raw of values) {
@@ -223,7 +227,7 @@ export async function POST(request: Request) {
           participantRoles,
           abilities,
           contextEvents,
-          eventPages: analysisEvents.eventsByAbility,
+          eventPages: groupRuleEventsByAbility(ruleEvents, scoredSpellIds),
         });
         eventRows += analyzed.eventRows;
       }

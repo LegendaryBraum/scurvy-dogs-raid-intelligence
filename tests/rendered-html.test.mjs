@@ -52,7 +52,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(warcraftLogs, /participatingPlayerIds\.size/);
   assert.match(warcraftLogs, /keystoneAffixes/);
   assert.match(warcraftLogs, /gameZone/);
-  assert.match(importer, /fetchFightAnalysisEvents/);
+  assert.match(importer, /fetchRuleEvents/);
   assert.match(reanalyzer, /resetExisting: true/);
   assert.match(warcraftLogs, /response\.status === 429/);
   assert.match(importer, /selectedFightIds\.has\(fight\.id\)/);

@@ -343,6 +343,41 @@ export async function fetchFightAnalysisEvents(code: string, fightId: number, ab
   };
 }
 
+export async function fetchRuleEvents(code: string, fightIds: number[], abilityIds: number[], token: string) {
+  const uniqueIds = [...new Set(abilityIds.filter((abilityId) => Number.isInteger(abilityId) && abilityId > 0))];
+  if (!uniqueIds.length || !fightIds.length) return [];
+  const idList = uniqueIds.join(", ");
+  const filterExpression = `ability.id IN (${idList}) OR stoppedAbility.id IN (${idList}) OR killingAbility.id IN (${idList})`;
+  const data = await graphQL<{ reportData: { report: { events: { data?: unknown[] } } | null } }>(token, `
+    query RuleEvents($code: String!, $fightIds: [Int], $filterExpression: String!) {
+      reportData {
+        report(code: $code, allowUnlisted: true) {
+          events(fightIDs: $fightIds, dataType: All, filterExpression: $filterExpression, limit: 10000, translate: false) { data }
+        }
+      }
+    }
+  `, { code, fightIds, filterExpression });
+  return data.reportData.report?.events.data ?? [];
+}
+
+export function groupRuleEventsByAbility(events: unknown[], abilityIds: number[]) {
+  const wanted = new Set(abilityIds);
+  const grouped = new Map(abilityIds.map((abilityId) => [abilityId, [] as unknown[]]));
+  for (const raw of events) {
+    const event = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const candidates = [
+      event.abilityGameID,
+      event.abilityID,
+      event.extraAbilityGameID,
+      event.extraAbilityID,
+      event.killingAbilityGameID,
+      event.killingAbilityID,
+    ].map(Number).filter((abilityId) => Number.isInteger(abilityId) && wanted.has(abilityId));
+    for (const abilityId of new Set(candidates)) grouped.get(abilityId)?.push(raw);
+  }
+  return grouped;
+}
+
 export async function fetchFightContextEvents(code: string, fightId: number, token: string) {
   type EventPage = { data: unknown[] };
   const data = await graphQL<{ reportData: { report: { deaths: EventPage; interrupts: EventPage; dispels: EventPage } | null } }>(token, `
