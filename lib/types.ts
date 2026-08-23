@@ -64,6 +64,8 @@ export type MechanicRule = {
     minAmount?: number;
     countOncePerCast?: boolean;
     ignoreTanks?: boolean;
+    scoringMode?: "penalty" | "success" | "context";
+    maxOccurrencesPerPull?: number;
     note?: string;
   };
 };

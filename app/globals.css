@@ -205,12 +205,14 @@ tbody tr:last-child td { border-bottom: 0; }
 .roster-member > button { padding: 7px 9px; border: 1px solid #c9d7d5; border-radius: 7px; color: #49636a; background: #fff; font-size: 8px; font-weight: 800; cursor: pointer; }
 .roster-member > button:hover { color: #fff; border-color: var(--teal); background: var(--teal); }
 .roster-member > button:disabled { cursor: wait; opacity: .55; }
-.config-filters { margin-bottom: 14px; padding: 13px; display: grid; grid-template-columns: 1.2fr 1.2fr .5fr; gap: 10px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
+.config-filters { margin-bottom: 10px; padding: 13px; display: grid; grid-template-columns: 1.1fr 1.1fr .45fr auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
 .config-filters label, .rule-form label { color: #728187; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .config-filters select, .rule-form input, .rule-form select, .rule-form textarea { width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #d7e1e1; border-radius: 8px; outline: none; color: #263f47; background: #fbfcfc; font-size: 11px; font-weight: 650; }
 .config-filters > div { padding: 6px 12px; display: flex; align-items: center; justify-content: space-between; border-radius: 8px; background: #edf4f2; }
 .config-filters > div span { color: #708287; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .config-filters > div strong { font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+.config-filters > button { min-height: 38px; }
+.config-status { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #496970; background: #eaf3f1; font-size: 9px; line-height: 1.5; }
 .config-grid { display: grid; grid-template-columns: 1.25fr .75fr; align-items: start; gap: 14px; }
 .rule-list { margin-top: 16px; }
 .rule-row { padding: 15px 0; display: grid; grid-template-columns: 58px 1fr auto; align-items: start; gap: 12px; border-top: 1px solid #e8eeee; }
@@ -218,7 +220,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .rule-row > div strong { color: #2e464e; font-size: 11px; }
 .rule-row > div small { margin-top: 3px; color: #7e8c91; font-size: 9px; }
 .rule-row > div p { margin: 6px 0 0; color: #929da0; font-size: 8px; line-height: 1.45; }
-.rule-row > b { color: #ad6f2f; font-family: Georgia, serif; font-size: 20px; font-weight: 500; }
+.rule-row > b { color: #ad6f2f; font-size: 9px; font-weight: 900; line-height: 1.35; text-align: right; white-space: nowrap; }
 .severity { padding: 5px 6px; border-radius: 6px; font-size: 7px; font-weight: 900; text-align: center; text-transform: uppercase; }
 .severity-low { color: #426d74; background: #e8f1f1; }.severity-medium { color: #9a6a1f; background: #f8eedb; }.severity-high, .severity-critical { color: #a34f4a; background: #f7e6e5; }
 .empty-rules { padding: 40px 20px; color: #829095; font-size: 11px; text-align: center; }

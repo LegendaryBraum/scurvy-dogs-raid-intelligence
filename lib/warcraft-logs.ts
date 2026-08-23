@@ -282,6 +282,28 @@ export async function fetchFightEvents(code: string, fightId: number, abilityId:
   return data.reportData.report?.events.data ?? [];
 }
 
+export async function fetchFightEventsBatch(code: string, fightId: number, abilityIds: number[], token: string) {
+  const uniqueIds = [...new Set(abilityIds.filter((abilityId) => Number.isInteger(abilityId) && abilityId > 0))];
+  if (!uniqueIds.length) return new Map<number, unknown[]>();
+  const variables: Record<string, unknown> = { code, fightId };
+  const declarations = uniqueIds.map((_, index) => `$ability${index}: Float!`).join(", ");
+  const fields = uniqueIds.map((abilityId, index) => {
+    variables[`ability${index}`] = abilityId;
+    return `events${index}: events(fightIDs: [$fightId], abilityID: $ability${index}, limit: 10000) { data }`;
+  }).join("\n");
+  const data = await graphQL<{ reportData: { report: Record<string, { data?: unknown[] }> | null } }>(token, `
+    query RelevantEventBatch($code: String!, $fightId: Int!, ${declarations}) {
+      reportData {
+        report(code: $code, allowUnlisted: true) {
+          ${fields}
+        }
+      }
+    }
+  `, variables);
+  const report = data.reportData.report ?? {};
+  return new Map(uniqueIds.map((abilityId, index) => [abilityId, report[`events${index}`]?.data ?? []]));
+}
+
 export async function fetchFightContextEvents(code: string, fightId: number, token: string) {
   type EventPage = { data: unknown[] };
   const data = await graphQL<{ reportData: { report: { deaths: EventPage; interrupts: EventPage; dispels: EventPage } | null } }>(token, `

@@ -1,12 +1,12 @@
 import { ensureSchema, getRuntimeEnv, makeId } from "../../../db/runtime";
 import {
   fetchFightContextEvents,
-  fetchFightEvents,
   fetchReportOverview,
   fetchReportPreview,
   parseRankingRows,
   parseReportUrls,
 } from "../../../lib/warcraft-logs";
+import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
 
 export const runtime = "edge";
 
@@ -16,19 +16,6 @@ type ImportPayload = {
   raidNight?: string;
   action?: "preview" | "import";
   selections?: Array<{ code: string; fightIds: number[] }>;
-};
-
-type StoredRule = {
-  id: string;
-  spell_id: number;
-  name: string;
-  category: string;
-  severity: string;
-  weight: number;
-  event_type: string;
-  difficulties_json: string;
-  roles_json: string;
-  condition_json: string;
 };
 
 const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
@@ -61,10 +48,6 @@ function eventActorId(value: unknown, preferSource = false) {
 
 function eventTimestamp(value: unknown, fallback: number) {
   return number(record(value).timestamp) || fallback;
-}
-
-function parseJson<T>(value: string, fallback: T): T {
-  try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
 async function removeDemoReport(db: D1Database, reportId: string) {
@@ -220,40 +203,19 @@ export async function POST(request: Request) {
         await addContextEvents("interrupt", contextEvents.interrupts);
         await addContextEvents("dispel", contextEvents.dispels);
 
-        const penalties = new Map<string, number>();
-        const countedOnce = new Set<string>();
-        const difficulty = difficultyNames[fight.difficulty ?? 0] ?? "Unknown";
-        for (const rule of configured.results) {
-          const liveEvents = await fetchFightEvents(requested.code, fight.id, rule.spell_id, token);
-          const roles = parseJson<string[]>(rule.roles_json, []);
-          const difficulties = parseJson<string[]>(rule.difficulties_json, []);
-          const condition = parseJson<{ minAmount?: number; countOncePerCast?: boolean; ignoreTanks?: boolean }>(rule.condition_json, {});
-          for (const raw of liveEvents) {
-            const preferSource = ["cast", "interrupt", "dispel"].includes(rule.event_type);
-            const playerId = participantIds.get(eventActorId(raw, preferSource));
-            if (!playerId) continue;
-            const role = participantRoles.get(playerId) ?? "DPS";
-            const event = record(raw);
-            const amount = number(event.amount);
-            if ((roles.length && !roles.includes(role)) || (difficulties.length && !difficulties.includes(difficulty))) continue;
-            if (condition.ignoreTanks && role === "Tank") continue;
-            if (condition.minAmount && amount < condition.minAmount) continue;
-            const timestamp = eventTimestamp(raw, fight.startTime);
-            const onceKey = `${rule.id}:${playerId}:${Math.floor(timestamp / 1000)}`;
-            if (condition.countOncePerCast && countedOnce.has(onceKey)) continue;
-            countedOnce.add(onceKey);
-            const utility = ["Interrupt", "Dispel", "Defensive", "Utility"].includes(rule.category);
-            const ability = abilities.get(rule.spell_id) ?? rule.name;
-            await db.prepare("INSERT INTO events (id, pull_id, player_id, rule_id, spell_id, event_type, timestamp, amount, outcome, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-              .bind(makeId("event"), pullId, playerId, rule.id, rule.spell_id, String(event.type ?? rule.event_type), timestamp, amount || null, utility ? "utility" : "warning", JSON.stringify({ ability, detail: `${rule.name} matched the configured ${rule.category.toLowerCase()} rule`, severity: rule.severity, source: "Warcraft Logs" })).run();
-            if (!utility) penalties.set(playerId, (penalties.get(playerId) ?? 0) + rule.weight);
-            eventRows += 1;
-          }
-        }
-        for (const [playerId, penalty] of penalties) {
-          await db.prepare("UPDATE pull_players SET mechanics_score = ? WHERE pull_id = ? AND player_id = ?")
-            .bind(clampScore(100 - penalty), pullId, playerId).run();
-        }
+        const analyzed = await analyzeFightRules({
+          db,
+          reportCode: requested.code,
+          fight,
+          pullId,
+          token,
+          rules: configured.results,
+          participantIds,
+          participantRoles,
+          abilities,
+          contextEvents,
+        });
+        eventRows += analyzed.eventRows;
       }
 
       results.push({
