@@ -1,14 +1,23 @@
 "use client";
 
-/* eslint-disable jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
+/* eslint-disable jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import type { DashboardData, MechanicRule, RosterMember, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
-type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[] };
+type ImportFight = { id: number; name: string; pullNumber: number; difficulty: string; duration: string; result: string; playerCount: number };
+type ImportGroup = { id: string; label: string; description: string; kind: "raid" | "mythic_plus" | "other"; defaultSelected: boolean; fights: ImportFight[] };
+type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
+
+function ImportModal({ reportUrls, previews, selections, busy, status, onClose, onUrlsChange, onReview, onConfirm, onToggleGroup, onToggleFight, onReset }: { reportUrls: string; previews: ImportPreview[]; selections: Record<string, number[]>; busy: boolean; status: string; onClose: () => void; onUrlsChange: (value: string) => void; onReview: (event: FormEvent) => void; onConfirm: () => void; onToggleGroup: (code: string, group: ImportGroup, selected: boolean) => void; onToggleFight: (code: string, fightId: number) => void; onReset: () => void }) {
+  const selectedCount = Object.values(selections).reduce((total, ids) => total + ids.length, 0);
+  const foundCount = previews.reduce((total, preview) => total + preview.pullCount, 0);
+  const excludedCount = Math.max(0, foundCount - selectedCount);
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="import-modal selective-import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">{previews.length ? "Choose exactly what to import" : "Review the full run before importing"}</h2></div><button type="button" onClick={onClose} aria-label="Close import">×</button></div><p>{previews.length ? "Everything found in the report is listed below. Select whole content groups or open any group to choose individual pulls." : "Paste one or more normal Warcraft Logs report links. The app reads the contents first; nothing is saved until you approve the exact pulls."}</p><form onSubmit={onReview}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => onUrlsChange(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Read contents</span><b>→</b><span>Choose pulls</span><b>→</b><span>Confirm import</span></div>{previews.length === 0 && <button className="primary-button" disabled={busy} type="submit">{busy ? "Reading report…" : "Read report contents"}</button>}{status && <p className="form-status" role="status">{status}</p>}</form>{previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Importing selected pulls…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}<small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small></section></div>;
+}
 
 function RosterManager({ members, busy, status, onToggle }: { members: RosterMember[]; busy: boolean; status: string; onToggle: (member: RosterMember) => void }) {
   const activeCount = members.filter((member) => member.included).length;
@@ -27,6 +36,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [importOpen, setImportOpen] = useState(false);
   const [reportUrls, setReportUrls] = useState("");
   const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
+  const [importSelections, setImportSelections] = useState<Record<string, number[]>>({});
   const [importStatus, setImportStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [ruleStatus, setRuleStatus] = useState("");
@@ -86,21 +96,25 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }
 
   async function previewReports(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setImportStatus("Checking the full report with Warcraft Logs…"); setImportPreviews([]);
+    event.preventDefault(); setBusy(true); setImportStatus("Reading every encounter in the report…"); setImportPreviews([]); setImportSelections({});
     try {
       const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", urls: reportUrls, season: initialData.season }) });
       const result = await response.json() as { error?: string; reports?: ImportPreview[]; needsConnection?: boolean };
       if (!response.ok) throw new Error(result.needsConnection ? "The one-time Warcraft Logs connection still needs to be completed before the first import." : result.error ?? "Preview failed.");
-      setImportPreviews(result.reports ?? []);
-      setImportStatus("Review the raid, bosses, pulls, and roster count below. Nothing has been saved yet.");
+      const reports = result.reports ?? [];
+      setImportPreviews(reports);
+      setImportSelections(Object.fromEntries(reports.map((report) => [report.code, report.groups.filter((group) => group.defaultSelected).flatMap((group) => group.fights.map((fight) => fight.id))])));
+      setImportStatus("Choose the content groups and individual pulls you want. Nothing has been saved yet.");
     } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
     finally { setBusy(false); }
   }
 
   async function confirmImport() {
-    setBusy(true); setImportStatus("Importing every boss pull and applying active rules…");
+    const selections = importPreviews.map((preview) => ({ code: preview.code, fightIds: importSelections[preview.code] ?? [] }));
+    if (!selections.some((selection) => selection.fightIds.length)) { setImportStatus("Select at least one pull to import."); return; }
+    setBusy(true); setImportStatus("Importing only the selected pulls and applying active rules…");
     try {
-      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season }) });
+      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season, selections }) });
       const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[] };
       if (!response.ok) throw new Error(result.error ?? "Import failed.");
       const stored = result.reports ?? [];
@@ -110,6 +124,28 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       window.setTimeout(() => window.location.reload(), 700);
     } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
     finally { setBusy(false); }
+  }
+
+  function toggleImportGroup(code: string, group: ImportGroup, selected: boolean) {
+    setImportSelections((current) => {
+      const next = new Set(current[code] ?? []);
+      group.fights.forEach((fight) => selected ? next.add(fight.id) : next.delete(fight.id));
+      return { ...current, [code]: [...next] };
+    });
+  }
+
+  function toggleImportFight(code: string, fightId: number) {
+    setImportSelections((current) => {
+      const next = new Set(current[code] ?? []);
+      if (next.has(fightId)) next.delete(fightId); else next.add(fightId);
+      return { ...current, [code]: [...next] };
+    });
+  }
+
+  function resetImportReview() {
+    setImportPreviews([]);
+    setImportSelections({});
+    setImportStatus("");
   }
 
   async function createShare() {
@@ -244,7 +280,20 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         </section>
       </section>}
 
-      {importOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}><section className="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">Review the full run before importing</h2></div><button type="button" onClick={() => setImportOpen(false)} aria-label="Close import">×</button></div><p>Paste the normal full-run report link from Warcraft Logs. The app checks the raid, roster, bosses, and every encounter pull before anything is saved.</p><form onSubmit={previewReports}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => { setReportUrls(event.target.value); setImportPreviews([]); setImportStatus(""); }} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Review contents</span><b>→</b><span>Confirm import</span><b>→</b><span>Open dashboard</span></div>{importPreviews.length === 0 && <button className="primary-button" disabled={busy} type="submit">{busy ? "Checking report…" : "Review full run"}</button>}{importStatus && <p className="form-status" role="status">{importStatus}</p>}</form>{importPreviews.length > 0 && <div className="import-review">{importPreviews.map((preview) => <article key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Boss pulls</small></span><span><strong>{preview.bosses.length}</strong><small>Bosses</small></span><span><strong>{preview.playerCount}</strong><small>Players found</small></span></div><ul>{preview.bosses.map((bossPreview) => <li key={bossPreview.name}><strong>{bossPreview.name}</strong><span>{bossPreview.pulls} pull{bossPreview.pulls === 1 ? "" : "s"}{bossPreview.kills ? ` · ${bossPreview.kills} kill${bossPreview.kills === 1 ? "" : "s"}` : ""}</span></li>)}</ul></article>)}<button className="primary-button confirm-import" disabled={busy} onClick={confirmImport} type="button">{busy ? "Importing full run…" : "Confirm and import everything"}</button><button className="review-again" disabled={busy} onClick={() => { setImportPreviews([]); setImportStatus(""); }} type="button">Use a different link</button></div>}<small className="credential-note">The connection reads public or unlisted reports from the URL you provide. Private Warcraft Logs reports will require account authorization in a later step.</small></section></div>}
+      {importOpen && <ImportModal
+        reportUrls={reportUrls}
+        previews={importPreviews}
+        selections={importSelections}
+        busy={busy}
+        status={importStatus}
+        onClose={() => setImportOpen(false)}
+        onUrlsChange={(value) => { setReportUrls(value); resetImportReview(); }}
+        onReview={previewReports}
+        onConfirm={confirmImport}
+        onToggleGroup={toggleImportGroup}
+        onToggleFight={toggleImportFight}
+        onReset={resetImportReview}
+      />}
     </main>
   );
 }

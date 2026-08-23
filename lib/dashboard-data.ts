@@ -263,14 +263,17 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     (pullPlayers[row.pull_id] ??= []).push(snapshot);
   }
 
-  const pulls = pullRows.map((pull) => ({
-    id: pull.id,
-    bossId: pull.boss_id,
-    label: `Pull ${pull.pull_number} · ${pull.killed ? "Kill" : pull.boss_percentage !== null ? `${pull.boss_percentage.toFixed(1)}%` : "Wipe"}`,
-    killed: Boolean(pull.killed),
-    duration: duration(pull.end_time - pull.start_time),
-    difficulty: difficultyNames[pull.difficulty ?? 0] ?? "Unknown",
-  }));
+  const pulls = pullRows.map((pull) => {
+    const difficulty = difficultyNames[pull.difficulty ?? 0] ?? "Unknown";
+    return {
+      id: pull.id,
+      bossId: pull.boss_id,
+      label: `${difficulty} · Pull ${pull.pull_number} · ${pull.killed ? "Kill" : pull.boss_percentage !== null ? `${pull.boss_percentage.toFixed(1)}%` : "Wipe"}`,
+      killed: Boolean(pull.killed),
+      duration: duration(pull.end_time - pull.start_time),
+      difficulty,
+    };
+  });
   const bosses = [...new Map(pullRows.map((pull) => [pull.boss_id, { id: pull.boss_id, name: pull.boss_name }])).values()];
   const roster: RosterMember[] = rosterResult.results.map((row) => ({
     id: row.player_id,

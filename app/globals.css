@@ -238,6 +238,7 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .modal-backdrop { position: fixed; z-index: 50; inset: 0; padding: 20px; display: grid; place-items: center; background: rgba(10, 27, 33, .62); backdrop-filter: blur(5px); }
 .import-modal { width: min(600px, 100%); padding: 28px; border-radius: 15px; background: #f8fbfa; box-shadow: 0 28px 80px rgba(3, 18, 23, .25); }
+.selective-import-modal { width: min(760px, 100%); max-height: min(860px, calc(100vh - 40px)); overflow-y: auto; }
 .modal-heading { display: flex; align-items: start; justify-content: space-between; gap: 24px; }
 .modal-heading h2 { margin: 8px 0 0; font-family: Georgia, serif; color: #1c3942; font-size: 27px; font-weight: 500; }
 .modal-heading button { width: 30px; height: 30px; border: 0; border-radius: 50%; color: #60757b; background: #e8eeee; font-size: 19px; cursor: pointer; }
@@ -263,6 +264,33 @@ tbody tr:last-child td { border-bottom: 0; }
 .import-review li strong { color: #344e55; }
 .confirm-import { margin-top: 12px; }
 .review-again { width: 100%; margin-top: 7px; padding: 8px; border: 0; color: #63777c; background: transparent; font-size: 8px; font-weight: 800; cursor: pointer; }
+.selective-import-review { margin-top: 16px; }
+.selective-report { padding: 17px; border: 1px solid #cddfdb; border-radius: 11px; background: #fff; }
+.selective-report + .selective-report { margin-top: 11px; }
+.content-group-list { margin-top: 14px; display: grid; gap: 8px; }
+.content-group { overflow: hidden; border: 1px solid #dbe5e3; border-radius: 10px; background: #fbfcfc; }
+.content-group-heading { padding: 11px 12px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; }
+.content-group-heading > label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.content-group-heading input, .pull-selection input { width: 15px; height: 15px; margin: 0; accent-color: var(--teal); }
+.content-group-heading strong, .content-group-heading small, .pull-selection strong, .pull-selection small { display: block; }
+.content-group-heading strong { color: #2d4850; font-size: 10px; }
+.content-group-heading small { margin-top: 3px; color: #819095; font-size: 8px; }
+.content-kind { padding: 5px 7px; border-radius: 20px; font-size: 7px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.content-kind-raid { color: #26715d; background: #e3f2ed; }
+.content-kind-mythic_plus { color: #77588c; background: #eee7f2; }
+.content-kind-other { color: #80644e; background: #efe8e0; }
+.selection-count { color: #77878b; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.content-group details { border-top: 1px solid #e8eeee; }
+.content-group summary { padding: 8px 12px; color: #526b72; background: #f1f6f5; font-size: 8px; font-weight: 850; cursor: pointer; }
+.pull-selection-list { padding: 3px 12px 7px; }
+.pull-selection { padding: 9px 0; display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 10px; border-top: 1px solid #edf1f0; cursor: pointer; }
+.pull-selection:first-child { border-top: 0; }
+.pull-selection strong { color: #365159; font-size: 9px; }
+.pull-selection small { margin-top: 3px; color: #899598; font-size: 8px; }
+.pull-selection > b { color: #4b696f; font-size: 9px; }
+.selection-summary { margin-top: 12px; padding: 11px 12px; display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 14px; border-radius: 9px; color: #66777c; background: #edf4f2; font-size: 9px; }
+.selection-summary strong { color: #284c54; font-size: 13px; }
+.selection-summary p { margin: 0; text-align: right; }
 
 .private-shell { min-height: 100vh; background: #f3f7f6; }
 .private-topbar { height: 72px; padding: 0 clamp(20px, 5vw, 72px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #fafcfb; }
@@ -337,7 +365,12 @@ tbody tr:last-child td { border-bottom: 0; }
   .rule-row { grid-template-columns: 55px 1fr; }
   .rule-row > b { grid-column: 2; }
   .import-modal { padding: 20px; }
+  .selective-import-modal { max-height: calc(100vh - 20px); }
   .import-path { display: none; }
+  .content-group-heading { grid-template-columns: 1fr auto; }
+  .selection-count { grid-column: 1 / -1; margin-left: 25px; }
+  .selection-summary { grid-template-columns: 1fr 1fr; }
+  .selection-summary p { grid-column: 1 / -1; text-align: left; }
   .private-hero { align-items: start; }
   .player-seal { display: none; }
   .average-comparison { grid-template-columns: 92px 1fr; }

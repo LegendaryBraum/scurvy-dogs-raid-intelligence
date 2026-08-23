@@ -15,6 +15,7 @@ type ImportPayload = {
   season?: string;
   raidNight?: string;
   action?: "preview" | "import";
+  selections?: Array<{ code: string; fightIds: number[] }>;
 };
 
 type StoredRule = {
@@ -98,6 +99,11 @@ export async function POST(request: Request) {
       return Response.json({ reports, invalid: parsed.invalid, readyToImport: true });
     }
 
+    const selectionByCode = new Map((payload.selections ?? []).map((selection) => [selection.code, new Set(selection.fightIds.filter(Number.isInteger))]));
+    if (!selectionByCode.size) {
+      return Response.json({ error: "Review the report and select at least one pull before importing." }, { status: 400 });
+    }
+
     const db = await ensureSchema();
     const seasonName = payload.season?.trim() || "Current season";
     const seasonId = await stableId("season", seasonName);
@@ -108,6 +114,11 @@ export async function POST(request: Request) {
       .bind(seasonId, seasonName).run();
 
     for (const requested of parsed.reports) {
+      const selectedFightIds = selectionByCode.get(requested.code) ?? new Set<number>();
+      if (!selectedFightIds.size) {
+        results.push({ code: requested.code, status: "skipped", pulls: 0, bosses: 0 });
+        continue;
+      }
       const existing = await db.prepare("SELECT id, source_mode FROM reports WHERE code = ?").bind(requested.code).first<{ id: string; source_mode: string }>();
       if (existing?.source_mode === "live") {
         results.push({ code: requested.code, status: "already_imported", sourceMode: "live" });
@@ -119,7 +130,21 @@ export async function POST(request: Request) {
       const rankedRows = parseRankingRows(overview.rankings);
       const actors = overview.masterData?.actors ?? [];
       const abilities = new Map((overview.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
-      const bossFights = overview.fights.filter((fight) => fight.encounterID > 0);
+      const originalPullNumbers = new Map<number, number>();
+      const originalPullCounters = new Map<string, number>();
+      for (const fight of overview.fights.filter((candidate) => candidate.encounterID > 0)) {
+        const key = `${fight.encounterID}:${fight.difficulty ?? 0}`;
+        const pullNumber = (originalPullCounters.get(key) ?? 0) + 1;
+        originalPullCounters.set(key, pullNumber);
+        originalPullNumbers.set(fight.id, pullNumber);
+      }
+      const bossFights = overview.fights.filter((fight) => fight.encounterID > 0 && selectedFightIds.has(fight.id));
+      if (!bossFights.length) {
+        results.push({ code: requested.code, status: "skipped", pulls: 0, bosses: 0 });
+        continue;
+      }
+      const selectedZones = [...new Set(bossFights.map((fight) => fight.gameZone?.name).filter((name): name is string => Boolean(name)))];
+      const reportZoneName = selectedZones.length === 1 ? selectedZones[0] : selectedZones.length > 1 ? `${selectedZones.length} selected zones` : overview.zone?.name ?? "Unknown raid";
 
       if (!raidNightId) {
         raidNightId = makeId("night");
@@ -131,20 +156,18 @@ export async function POST(request: Request) {
 
       const reportId = makeId("report");
       await db.prepare("INSERT INTO reports (id, raid_night_id, code, url, title, zone_name, start_time, end_time, source_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live')")
-        .bind(reportId, raidNightId, requested.code, requested.url, overview.title, overview.zone?.name ?? "Unknown raid", overview.startTime, overview.endTime).run();
+        .bind(reportId, raidNightId, requested.code, requested.url, overview.title, reportZoneName, overview.startTime, overview.endTime).run();
 
-      const bossPullNumbers = new Map<number, number>();
       let playerRows = 0;
       let eventRows = 0;
 
       for (const fight of bossFights) {
         const bossId = `${seasonId}_encounter_${fight.encounterID}`;
         const pullId = `${reportId}_fight_${fight.id}`;
-        const pullNumber = (bossPullNumbers.get(fight.encounterID) ?? 0) + 1;
-        bossPullNumbers.set(fight.encounterID, pullNumber);
+        const pullNumber = originalPullNumbers.get(fight.id) ?? 1;
         await db.batch([
           db.prepare("INSERT INTO bosses (id, season_id, encounter_id, raid_name, name) VALUES (?, ?, ?, ?, ?) ON CONFLICT(season_id, encounter_id) DO UPDATE SET raid_name = excluded.raid_name, name = excluded.name")
-            .bind(bossId, seasonId, fight.encounterID, overview.zone?.name ?? "Unknown raid", fight.name),
+            .bind(bossId, seasonId, fight.encounterID, fight.gameZone?.name ?? overview.zone?.name ?? "Unknown raid", fight.name),
           db.prepare("INSERT INTO pulls (id, report_id, boss_id, fight_id, pull_number, difficulty, killed, start_time, end_time, boss_percentage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
             .bind(pullId, reportId, bossId, fight.id, pullNumber, fight.difficulty ?? null, fight.kill ? 1 : 0, fight.startTime, fight.endTime, fight.bossPercentage ?? null),
         ]);

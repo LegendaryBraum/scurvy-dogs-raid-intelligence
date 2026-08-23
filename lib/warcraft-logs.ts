@@ -19,6 +19,9 @@ export type WclReportOverview = {
     averageItemLevel?: number | null;
     friendlyPlayers?: number[] | null;
     friendlySpecs?: string[] | null;
+    gameZone?: { id: number; name?: string | null } | null;
+    keystoneAffixes?: number[] | null;
+    rating?: number | null;
   }>;
   masterData?: {
     actors?: Array<{ id: number; name: string; type: string; subType: string; server?: string | null }> | null;
@@ -36,6 +39,22 @@ export type WclImportPreview = {
   pullCount: number;
   playerCount: number;
   bosses: Array<{ name: string; pulls: number; kills: number }>;
+  groups: Array<{
+    id: string;
+    label: string;
+    description: string;
+    kind: "raid" | "mythic_plus" | "other";
+    defaultSelected: boolean;
+    fights: Array<{
+      id: number;
+      name: string;
+      pullNumber: number;
+      difficulty: string;
+      duration: string;
+      result: string;
+      playerCount: number;
+    }>;
+  }>;
 };
 
 export type WclRankingRow = {
@@ -49,6 +68,18 @@ export type WclRankingRow = {
 };
 
 const REPORT_PATTERN = /(?:warcraftlogs\.com\/reports\/|^)([A-Za-z0-9]{8,24})(?:[/?#]|$)/i;
+const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
+
+function fightDuration(startTime: number, endTime: number) {
+  const totalSeconds = Math.max(0, Math.round((endTime - startTime) / 1000));
+  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
+}
+
+function classifyFight(fight: WclReportOverview["fights"][number]) {
+  if ((fight.keystoneAffixes?.length ?? 0) > 0 || (fight.rating ?? 0) > 0) return "mythic_plus" as const;
+  if (fight.difficulty && difficultyNames[fight.difficulty]) return "raid" as const;
+  return "other" as const;
+}
 
 export function parseReportUrls(input: string | string[]) {
   const candidates = Array.isArray(input) ? input : input.split(/[\n,\s]+/);
@@ -107,6 +138,8 @@ export async function fetchReportOverview(code: string, credentials: WarcraftLog
           zone { name }
           fights {
             id name encounterID startTime endTime difficulty kill bossPercentage averageItemLevel friendlyPlayers friendlySpecs
+            gameZone { id name }
+            keystoneAffixes rating
           }
           masterData {
             actors(type: "Player") { id name type subType server }
@@ -129,7 +162,11 @@ export async function fetchReportPreview(code: string, credentials: WarcraftLogs
         report(code: $code, allowUnlisted: true) {
           code title startTime endTime visibility
           zone { name }
-          fights { id name encounterID startTime endTime difficulty kill bossPercentage friendlyPlayers }
+          fights {
+            id name encounterID startTime endTime difficulty kill bossPercentage friendlyPlayers
+            gameZone { id name }
+            keystoneAffixes rating
+          }
           masterData { actors(type: "Player") { id name type subType server } }
         }
       }
@@ -146,6 +183,36 @@ export async function fetchReportPreview(code: string, credentials: WarcraftLogs
     if (fight.kill) entry.kills += 1;
     bossMap.set(fight.name, entry);
   }
+  const grouped = new Map<string, WclImportPreview["groups"][number]>();
+  const pullNumbers = new Map<string, number>();
+  for (const fight of fights) {
+    const kind = classifyFight(fight);
+    const zoneName = fight.gameZone?.name ?? report.zone?.name ?? "Unknown content";
+    const difficulty = kind === "mythic_plus" ? "Mythic+" : difficultyNames[fight.difficulty ?? 0] ?? "Other";
+    const key = kind === "mythic_plus"
+      ? `${kind}:${fight.gameZone?.id ?? zoneName}`
+      : `${kind}:${fight.gameZone?.id ?? zoneName}:${fight.difficulty ?? 0}:${fight.encounterID}`;
+    const nextPull = (pullNumbers.get(key) ?? 0) + 1;
+    pullNumbers.set(key, nextPull);
+    const group = grouped.get(key) ?? {
+      id: key,
+      label: kind === "mythic_plus" ? `${zoneName} · Mythic+` : `${difficulty} · ${fight.name}`,
+      description: kind === "mythic_plus" ? "Dungeon content · unchecked by default" : `${zoneName} · ${kind === "raid" ? "Raid encounter" : "Other encounter"}`,
+      kind,
+      defaultSelected: kind === "raid",
+      fights: [],
+    };
+    group.fights.push({
+      id: fight.id,
+      name: fight.name,
+      pullNumber: nextPull,
+      difficulty,
+      duration: fightDuration(fight.startTime, fight.endTime),
+      result: fight.kill ? "Kill" : fight.bossPercentage !== null && fight.bossPercentage !== undefined ? `${fight.bossPercentage.toFixed(1)}%` : "Wipe",
+      playerCount: fight.friendlyPlayers?.length ?? 0,
+    });
+    grouped.set(key, group);
+  }
   const preview: WclImportPreview = {
     code: report.code,
     title: report.title,
@@ -155,6 +222,7 @@ export async function fetchReportPreview(code: string, credentials: WarcraftLogs
     pullCount: fights.length,
     playerCount: participatingPlayerIds.size,
     bosses: [...bossMap.values()],
+    groups: [...grouped.values()],
   };
   return preview;
 }
