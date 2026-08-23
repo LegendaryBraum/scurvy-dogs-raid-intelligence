@@ -123,6 +123,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
     JOIN raid_nights rn ON rn.id = r.raid_night_id
     JOIN seasons s ON s.id = rn.season_id
     WHERE r.source_mode = 'live' AND r.included = 1 AND rn.included = 1
+      AND EXISTS (SELECT 1 FROM pulls active_pu WHERE active_pu.report_id = r.id AND active_pu.included = 1)
       AND (? IS NULL OR rn.id = ?)
     ORDER BY r.imported_at DESC, r.start_time DESC
     LIMIT 1
@@ -135,7 +136,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       SELECT pu.id, pu.boss_id, b.name AS boss_name, pu.fight_id, pu.pull_number, pu.difficulty,
              pu.killed, pu.start_time, pu.end_time, pu.boss_percentage
       FROM pulls pu JOIN bosses b ON b.id = pu.boss_id JOIN reports r ON r.id = pu.report_id
-      WHERE r.raid_night_id = ? AND r.included = 1 ORDER BY pu.start_time DESC
+      WHERE r.raid_night_id = ? AND r.included = 1 AND pu.included = 1 ORDER BY pu.start_time DESC
     `).bind(report.raid_night_id).all<PullRow>(),
     db.prepare(`
       SELECT pp.pull_id, pu.boss_id, pp.player_id, p.name, p.realm, p.class_name, p.role, pp.spec,
@@ -147,7 +148,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       JOIN pulls pu ON pu.id = pp.pull_id
       JOIN reports r ON r.id = pu.report_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
-      WHERE r.raid_night_id = ? AND r.included = 1 AND COALESCE(prs.included, 1) = 1
+      WHERE r.raid_night_id = ? AND r.included = 1 AND pu.included = 1 AND COALESCE(prs.included, 1) = 1
       ORDER BY pu.start_time DESC, p.name
     `).bind(report.raid_night_id).all<PullPlayerRow>(),
     db.prepare(`
@@ -157,7 +158,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       JOIN reports r ON r.id = pu.report_id
       LEFT JOIN mechanic_rules mr ON mr.id = e.rule_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = e.player_id
-      WHERE r.raid_night_id = ? AND r.included = 1 AND COALESCE(prs.included, 1) = 1
+      WHERE r.raid_night_id = ? AND r.included = 1 AND pu.included = 1 AND COALESCE(prs.included, 1) = 1
         AND (e.rule_id IS NULL OR mr.enabled = 1)
       ORDER BY e.timestamp
     `).bind(report.raid_night_id).all<EventRow>(),
@@ -165,14 +166,14 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.icon, mr.category, mr.severity,
              mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json, mr.enabled
       FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id JOIN reports r ON r.id = pu.report_id
-      WHERE r.raid_night_id = ? AND r.included = 1 ORDER BY mr.enabled DESC, mr.updated_at DESC
+      WHERE r.raid_night_id = ? AND r.included = 1 AND pu.included = 1 ORDER BY mr.enabled DESC, mr.updated_at DESC
     `).bind(report.raid_night_id).all<RuleRow>(),
     db.prepare(`
       SELECT p.id AS player_id, p.name, p.realm, p.class_name, p.role,
              MAX(pp.spec) AS spec,
-             COUNT(DISTINCT pp.pull_id) AS pulls_seen,
-             COUNT(DISTINCT r.raid_night_id) AS raid_nights,
-             MAX(r.start_time) AS last_seen,
+             COUNT(DISTINCT CASE WHEN pu.included = 1 THEN pp.pull_id END) AS pulls_seen,
+             COUNT(DISTINCT CASE WHEN pu.included = 1 THEN r.raid_night_id END) AS raid_nights,
+             MAX(CASE WHEN pu.included = 1 THEN r.start_time END) AS last_seen,
              COALESCE(prs.included, 1) AS included,
              COALESCE(pi.identity_id, p.id) AS identity_id
       FROM players p
@@ -189,7 +190,9 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
     db.prepare("SELECT module_key, enabled FROM score_module_settings").all<ModuleRow>(),
     db.prepare(`
       SELECT rn.id, rn.name, rn.happened_at, COUNT(DISTINCT r.id) AS report_count
-      FROM raid_nights rn JOIN reports r ON r.raid_night_id = rn.id
+      FROM raid_nights rn
+      JOIN reports r ON r.raid_night_id = rn.id
+      JOIN pulls active_pu ON active_pu.report_id = r.id AND active_pu.included = 1
       WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND r.source_mode = 'live'
       GROUP BY rn.id, rn.name, rn.happened_at ORDER BY rn.happened_at DESC
     `).bind(report.season_id).all<RaidNightRow>(),
@@ -202,7 +205,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       JOIN raid_nights rn ON rn.id = r.raid_night_id
       LEFT JOIN player_identities pi ON pi.player_id = p.id
       LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
-      WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND r.source_mode = 'live' AND COALESCE(prs.included, 1) = 1
+      WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND pu.included = 1 AND r.source_mode = 'live' AND COALESCE(prs.included, 1) = 1
       GROUP BY COALESCE(pi.identity_id, p.id)
     `).bind(report.season_id).all<AttendanceRow>(),
   ]);

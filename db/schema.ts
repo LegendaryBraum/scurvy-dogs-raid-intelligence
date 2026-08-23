@@ -34,7 +34,8 @@ export const pulls = sqliteTable("pulls", {
   bossId: text("boss_id").notNull().references(() => bosses.id), fightId: integer("fight_id").notNull(),
   pullNumber: integer("pull_number").notNull(), difficulty: integer("difficulty"), killed: integer("killed", { mode: "boolean" }).notNull().default(false),
   startTime: integer("start_time").notNull(), endTime: integer("end_time").notNull(), bossPercentage: real("boss_percentage"),
-}, (table) => [uniqueIndex("idx_pulls_report_fight").on(table.reportId, table.fightId), index("idx_pulls_boss").on(table.bossId)]);
+  included: integer("included", { mode: "boolean" }).notNull().default(true),
+}, (table) => [uniqueIndex("idx_pulls_report_fight").on(table.reportId, table.fightId), index("idx_pulls_report_included").on(table.reportId, table.included), index("idx_pulls_boss").on(table.bossId)]);
 
 export const players = sqliteTable("players", {
   id: text("id").primaryKey(), name: text("name").notNull(), realm: text("realm").notNull().default(""),

@@ -50,8 +50,20 @@ export type RaidReportRecord = {
   zoneName: string;
   included: boolean;
   pullCount: number;
+  activePullCount: number;
   bossCount: number;
   playerCount: number;
+  pulls: RaidPullRecord[];
+};
+
+export type RaidPullRecord = {
+  id: string;
+  bossName: string;
+  pullNumber: number;
+  difficulty: string;
+  duration: string;
+  result: string;
+  included: boolean;
 };
 
 export type RaidNightRecord = {
@@ -61,6 +73,7 @@ export type RaidNightRecord = {
   included: boolean;
   reportCount: number;
   pullCount: number;
+  activePullCount: number;
   reports: RaidReportRecord[];
 };
 

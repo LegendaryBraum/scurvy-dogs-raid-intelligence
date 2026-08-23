@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const db = await ensureSchema();
     const [ruleResult, pullResult] = await Promise.all([
       db.prepare("SELECT * FROM mechanic_rules WHERE boss_id = ? AND enabled = 1 ORDER BY updated_at").bind(payload.bossId).all<StoredRule>(),
-      db.prepare("SELECT p.id, p.report_id, p.fight_id, r.code FROM pulls p JOIN reports r ON r.id = p.report_id WHERE p.boss_id = ? AND r.source_mode = 'live' ORDER BY r.start_time, p.fight_id").bind(payload.bossId).all<PullRow>(),
+      db.prepare("SELECT p.id, p.report_id, p.fight_id, r.code FROM pulls p JOIN reports r ON r.id = p.report_id JOIN raid_nights rn ON rn.id = r.raid_night_id WHERE p.boss_id = ? AND p.included = 1 AND r.included = 1 AND rn.included = 1 AND r.source_mode = 'live' ORDER BY r.start_time, p.fight_id").bind(payload.bossId).all<PullRow>(),
     ]);
     if (!ruleResult.results.length) return Response.json({ error: "Add at least one active rule before recalculating." }, { status: 409 });
     if (!pullResult.results.length) return Response.json({ error: "No stored Warcraft Logs pulls were found for this boss." }, { status: 404 });

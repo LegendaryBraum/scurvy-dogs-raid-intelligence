@@ -20,6 +20,15 @@ export async function POST(request: Request) {
     if (storedPlayer && !storedPlayer.included) {
       return Response.json({ error: "Ignored guests cannot receive player reports until they are restored to the roster." }, { status: 409 });
     }
+    if (storedPlayer && payload.pullId) {
+      const activePull = await db.prepare(`
+        SELECT pu.id FROM pulls pu
+        JOIN reports r ON r.id = pu.report_id
+        JOIN raid_nights rn ON rn.id = r.raid_night_id
+        WHERE pu.id = ? AND pu.included = 1 AND r.included = 1 AND rn.included = 1
+      `).bind(payload.pullId).first<{ id: string }>();
+      if (!activePull) return Response.json({ error: "That pull is excluded. Restore it from Raid Data before sharing a player view." }, { status: 409 });
+    }
     const fallback = raidData.players.find((candidate) => candidate.id === payload.playerId) ?? raidData.players[0];
     const playerId = storedPlayer?.id ?? await stablePlayerId(fallback.name, fallback.realm);
     const token = crypto.randomUUID().replaceAll("-", "").slice(0, 20);

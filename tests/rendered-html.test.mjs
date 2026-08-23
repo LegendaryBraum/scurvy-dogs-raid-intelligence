@@ -33,7 +33,7 @@ test("server-renders the player-first dashboard", async () => {
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
@@ -50,6 +50,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/identities/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/history/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0004_special_menace.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0005_lean_thunderbolt.sql", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -72,6 +73,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.ok(app.indexOf("<RosterManager members") < app.indexOf("<IdentityManager members"));
   assert.match(app, /Night-by-night/);
   assert.match(app, /Replace \/ reimport/);
+  assert.match(app, /Review individual pulls/);
+  assert.match(app, /Exclude pull/);
   assert.match(app, /function SpellIcon/);
   assert.match(app, /wowhead\.com\/spell=/);
   assert.match(importer, /fetchReportPreview/);
@@ -107,10 +110,15 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(spellIcons, /UPDATE mechanic_rules SET icon/);
   assert.match(runs, /export async function DELETE/);
   assert.match(runs, /included = \?/);
+  assert.match(runs, /"pull"/);
+  assert.match(runs, /DELETE FROM shares WHERE pull_id = \?/);
   assert.match(identities, /identity_id/);
   assert.match(history, /GROUP BY rn\.id/);
   assert.match(history, /attended \/ \(index \+ 1\)/);
+  assert.match(history, /pu\.included = 1/);
   assert.match(migration, /UPDATE `score_module_settings` SET `enabled` = 1/);
+  assert.match(pullMigration, /ALTER TABLE `pulls` ADD `included`/);
+  assert.match(pullMigration, /idx_pulls_report_included/);
   assert.match(roster, /DELETE FROM shares WHERE player_id/);
   assert.match(share, /No other player names/);
   assert.match(share, /robots: \{ index: false/);

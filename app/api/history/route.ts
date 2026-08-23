@@ -44,7 +44,7 @@ export async function GET(request: Request) {
                AVG(NULLIF(pp.hps, 0)) AS hps
         FROM raid_nights rn
         JOIN reports r ON r.raid_night_id = rn.id AND r.source_mode = 'live' AND r.included = 1
-        LEFT JOIN pulls pu ON pu.report_id = r.id
+        LEFT JOIN pulls pu ON pu.report_id = r.id AND pu.included = 1
         LEFT JOIN pull_players pp ON pp.pull_id = pu.id AND pp.player_id IN (
           SELECT pi2.player_id FROM player_identities pi2 WHERE pi2.identity_id = ?
         )
