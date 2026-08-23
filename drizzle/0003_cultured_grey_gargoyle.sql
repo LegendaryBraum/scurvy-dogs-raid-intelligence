@@ -1,0 +1,1 @@
+ALTER TABLE `mechanic_rules` ADD `icon` text;

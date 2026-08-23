@@ -49,6 +49,7 @@ export type RaidEvent = {
   detail: string;
   timestamp: string;
   amount?: number;
+  icon?: string;
 };
 
 export type MechanicRule = {
@@ -56,6 +57,7 @@ export type MechanicRule = {
   bossId: string;
   spellId: number;
   name: string;
+  icon?: string;
   category: "Avoidable damage" | "Mechanic failure" | "Interrupt" | "Dispel" | "Defensive" | "Soak" | "Utility";
   severity: "Low" | "Medium" | "High" | "Critical";
   weight: number;

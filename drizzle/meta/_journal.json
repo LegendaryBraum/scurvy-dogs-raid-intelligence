@@ -22,6 +22,13 @@
       "when": 1787512832845,
       "tag": "0003_burly_vampiro",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787517501200,
+      "tag": "0003_cultured_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }

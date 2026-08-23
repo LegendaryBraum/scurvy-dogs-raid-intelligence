@@ -25,7 +25,7 @@ export type WclReportOverview = {
   }>;
   masterData?: {
     actors?: Array<{ id: number; name: string; type: string; subType: string; server?: string | null }> | null;
-    abilities?: Array<{ gameID: number; name: string }> | null;
+    abilities?: Array<{ gameID: number; name: string; icon?: string | null }> | null;
   } | null;
   rankings?: unknown;
 };
@@ -152,7 +152,7 @@ export async function fetchReportOverview(code: string, credentials: WarcraftLog
           }
           masterData {
             actors(type: "Player") { id name type subType server }
-            abilities { gameID name }
+            abilities { gameID name icon }
           }
           rankings
         }

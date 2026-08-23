@@ -91,7 +91,7 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .takeaway p { margin: 5px 0 0; color: #65767b; font-size: 11px; line-height: 1.55; }
 .event-panel button { border: 0; background: none; color: var(--teal); font-size: 10px; font-weight: 800; cursor: pointer; }
 .events { margin: 16px 0 0; padding: 0; list-style: none; }
-.events li { padding: 14px 0; display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px; border-top: 1px solid #edf1f1; }
+.events li { padding: 14px 0; display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 10px; border-top: 1px solid #edf1f1; }
 .event-status { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; font-size: 11px; font-weight: 900; }
 .event-status.success { color: #247c64; background: #e6f3ee; }
 .event-status.warning { color: #ac771d; background: #f9f0dd; }
@@ -99,6 +99,14 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .events strong { color: #30464d; font-size: 11px; }
 .events small { margin-top: 3px; color: #899498; font-size: 9px; }
 .events time { color: #839095; font-size: 10px; font-variant-numeric: tabular-nums; }
+.spell-icon-link { position: relative; width: 38px; height: 38px; display: grid; flex: 0 0 38px; place-items: center; overflow: hidden; border: 1px solid #d7e2e0; border-radius: 9px; color: #8a999d; background: linear-gradient(135deg, #eef4f2, #dfeae7); box-shadow: 0 3px 8px rgba(35, 69, 69, .08); text-decoration: none; transition: transform .14s ease, border-color .14s ease, box-shadow .14s ease; }
+.spell-icon-link:hover { z-index: 1; border-color: #5b9e8d; box-shadow: 0 5px 13px rgba(31, 94, 78, .18); transform: translateY(-1px); }
+.spell-icon-fallback { font-family: Georgia, serif; font-size: 15px; font-weight: 700; }
+.spell-icon { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.event-spell { position: relative; width: 38px; height: 38px; display: block; }
+.event-spell .event-status { position: absolute; right: -3px; bottom: -3px; z-index: 2; width: 16px; height: 16px; border: 2px solid #fff; border-radius: 50%; font-size: 8px; }
+.event-ability-link { display: block; color: #30464d; font-size: 11px; font-weight: 800; text-decoration: none; }
+.event-ability-link:hover, .rule-copy a:hover, .detail-rule-list a:hover { color: var(--teal); text-decoration: underline; }
 .score-context { min-height: 22px; margin: 8px 0 0; display: block; color: #8b989c; font-size: 9px; line-height: 1.35; }
 .score-card-action { margin-top: 10px; display: flex; justify-content: space-between; color: #26735f; font-size: 9px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
 .score-card-action i { font-style: normal; transition: transform .16s ease; }
@@ -119,11 +127,12 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .score-detail-columns h3 { margin: 0; color: #344c53; font-size: 11px; }
 .detail-event-list { margin-top: 8px; }
 .detail-rule-list { margin-top: 9px; display: grid; gap: 8px; }
-.detail-rule-list > div { padding: 10px; display: grid; grid-template-columns: 58px 1fr; align-items: start; gap: 9px; border-radius: 9px; background: #f1f6f4; }
+.detail-rule-list > div { padding: 10px; display: grid; grid-template-columns: 38px 1fr 58px; align-items: center; gap: 9px; border-radius: 9px; background: #f1f6f4; }
 .detail-rule-list p { margin: 0; }
 .detail-rule-list strong, .detail-rule-list small { display: block; }
 .detail-rule-list strong { color: #344c53; font-size: 10px; }
 .detail-rule-list small { margin-top: 3px; color: #839095; font-size: 8px; }
+.detail-rule-list small a, .rule-copy small a { color: inherit; font-weight: 800; text-decoration: none; }
 .detail-empty { margin: 0; color: #7e8d92; font-size: 10px; line-height: 1.5; }
 .detail-explanation { margin-top: 18px; padding: 16px 18px; border-radius: 10px; background: #edf5f2; }
 .detail-explanation strong { color: #2d494f; font-size: 11px; }
@@ -245,6 +254,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .rule-list { margin-top: 16px; }
 .rule-row { padding: 15px 0; display: grid; grid-template-columns: 58px 1fr auto; align-items: start; gap: 12px; border-top: 1px solid #e8eeee; transition: opacity .16s ease, background .16s ease; }
 .rule-row-paused { margin: 0 -8px; padding-right: 8px; padding-left: 8px; opacity: .62; background: #faf8f5; }
+.rule-identity { min-width: 0; display: flex; align-items: start; gap: 10px; }
+.rule-copy { min-width: 0; }
 .rule-copy strong, .rule-copy small { display: block; }
 .rule-copy strong { color: #2e464e; font-size: 11px; }
 .rule-copy small { margin-top: 3px; color: #7e8c91; font-size: 9px; }

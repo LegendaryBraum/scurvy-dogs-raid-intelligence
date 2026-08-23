@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "847c82cb-fddd-4eb4-ad09-be0a81881bb3",
-  "prevId": "4ec33dec-b09d-40ac-896d-766842b4b07f",
+  "id": "8aa1380b-1ae9-412f-bf78-6184aeeadcf2",
+  "prevId": "847c82cb-fddd-4eb4-ad09-be0a81881bb3",
   "tables": {
     "bosses": {
       "name": "bosses",
@@ -239,6 +239,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "icon": {
+          "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "category": {

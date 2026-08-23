@@ -62,7 +62,7 @@ export const pullPlayers = sqliteTable("pull_players", {
 
 export const mechanicRules = sqliteTable("mechanic_rules", {
   id: text("id").primaryKey(), bossId: text("boss_id").notNull().references(() => bosses.id), spellId: integer("spell_id").notNull(),
-  name: text("name").notNull(), category: text("category").notNull(), severity: text("severity").notNull(), weight: real("weight").notNull(),
+  name: text("name").notNull(), icon: text("icon"), category: text("category").notNull(), severity: text("severity").notNull(), weight: real("weight").notNull(),
   eventType: text("event_type").notNull(), difficultiesJson: text("difficulties_json").notNull().default("[]"),
   rolesJson: text("roles_json").notNull().default("[]"), conditionJson: text("condition_json").notNull().default("{}"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),

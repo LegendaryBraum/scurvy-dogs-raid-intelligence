@@ -116,7 +116,11 @@ export async function POST(request: Request) {
       const { report: overview, token } = await fetchReportOverview(requested.code, credentials);
       const rankedRows = parseRankingRows(overview.rankings);
       const actors = overview.masterData?.actors ?? [];
-      const abilities = new Map((overview.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
+      const abilities = new Map((overview.masterData?.abilities ?? []).map((ability) => [ability.gameID, { name: ability.name, icon: ability.icon }]));
+      const iconUpdates = [...abilities.entries()]
+        .filter((entry): entry is [number, { name: string; icon: string }] => Boolean(entry[1].icon))
+        .map(([spellId, ability]) => db.prepare("UPDATE mechanic_rules SET icon = ? WHERE spell_id = ?").bind(ability.icon, spellId));
+      if (iconUpdates.length) await db.batch(iconUpdates);
       const originalPullNumbers = new Map<number, number>();
       const originalPullCounters = new Map<string, number>();
       for (const fight of overview.fights.filter((candidate) => candidate.encounterID > 0)) {
@@ -201,11 +205,12 @@ export async function POST(request: Request) {
             const event = record(raw);
             const spellId = eventSpellId(raw);
             const stoppedId = number(event.extraAbilityGameID ?? event.extraAbilityID);
-            const ability = abilities.get(spellId) ?? (kind === "death" ? "Death" : kind === "interrupt" ? "Interrupt" : "Dispel");
-            const stopped = stoppedId ? abilities.get(stoppedId) : null;
+            const abilityMetadata = abilities.get(spellId);
+            const ability = abilityMetadata?.name ?? (kind === "death" ? "Death" : kind === "interrupt" ? "Interrupt" : "Dispel");
+            const stopped = stoppedId ? abilities.get(stoppedId)?.name : null;
             const detail = kind === "death" ? "Death recorded by Warcraft Logs" : stopped ? `${kind === "interrupt" ? "Interrupted" : "Removed"} ${stopped}` : `${kind === "interrupt" ? "Interrupt" : "Dispel"} recorded by Warcraft Logs`;
             await db.prepare("INSERT INTO events (id, pull_id, player_id, spell_id, event_type, timestamp, amount, outcome, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-              .bind(makeId("event"), pullId, playerId, spellId, kind, eventTimestamp(raw, fight.startTime), number(event.amount) || null, kind === "death" ? "death" : "utility", JSON.stringify({ ability, detail, source: "Warcraft Logs" })).run();
+              .bind(makeId("event"), pullId, playerId, spellId, kind, eventTimestamp(raw, fight.startTime), number(event.amount) || null, kind === "death" ? "death" : "utility", JSON.stringify({ ability, icon: abilityMetadata?.icon ?? undefined, detail, source: "Warcraft Logs" })).run();
             eventRows += 1;
           }
         };

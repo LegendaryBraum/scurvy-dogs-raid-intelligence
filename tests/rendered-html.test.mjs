@@ -25,11 +25,13 @@ test("server-renders the player-first dashboard", async () => {
   assert.doesNotMatch(html, />Attendance</);
   assert.doesNotMatch(html, />Preparation</);
   assert.match(html, /View details/);
+  assert.match(html, /spell-icon-link/);
+  assert.match(html, /wowhead\.com\/spell=/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview/);
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
@@ -41,6 +43,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/roster/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/modules/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/config/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/spell-icons/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -55,10 +58,13 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Pause module/);
   assert.match(app, /Duplicate/);
   assert.match(app, /Save rule changes/);
+  assert.match(app, /function SpellIcon/);
+  assert.match(app, /wowhead\.com\/spell=/);
   assert.match(importer, /fetchReportPreview/);
   assert.match(warcraftLogs, /participatingPlayerIds\.size/);
   assert.match(warcraftLogs, /keystoneAffixes/);
   assert.match(warcraftLogs, /gameZone/);
+  assert.match(warcraftLogs, /abilities \{ gameID name icon \}/);
   assert.match(importer, /fetchRuleEvents/);
   assert.match(reanalyzer, /resetExisting: true/);
   assert.match(warcraftLogs, /response\.status === 429/);
@@ -68,6 +74,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(dashboard, /pullPlayers/);
   assert.match(dashboard, /player_roster_settings/);
   assert.match(dashboard, /Live Warcraft Logs import/);
+  assert.match(dashboard, /mr\.icon/);
   assert.match(scoring, /scoreMechanics/);
   assert.match(scoring, /scorePerformance/);
   assert.match(schema, /mechanicRules/);
@@ -76,6 +83,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(schema, /scoreModuleSettings/);
   assert.match(modules, /score_module_settings/);
   assert.match(config, /export async function PATCH/);
+  assert.match(spellIcons, /fetchReportOverview/);
+  assert.match(spellIcons, /UPDATE mechanic_rules SET icon/);
   assert.match(roster, /DELETE FROM shares WHERE player_id/);
   assert.match(share, /No other player names/);
   assert.match(share, /robots: \{ index: false/);

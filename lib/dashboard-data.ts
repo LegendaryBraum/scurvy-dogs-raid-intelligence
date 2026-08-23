@@ -73,6 +73,7 @@ type RuleRow = {
   boss_id: string;
   spell_id: number;
   name: string;
+  icon: string | null;
   category: string;
   severity: string;
   weight: number;
@@ -150,7 +151,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       ORDER BY e.timestamp
     `).bind(report.id).all<EventRow>(),
     db.prepare(`
-      SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.category, mr.severity,
+      SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.icon, mr.category, mr.severity,
              mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json, mr.enabled
       FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id
       WHERE pu.report_id = ? ORDER BY mr.enabled DESC, mr.updated_at DESC
@@ -183,6 +184,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     bossId: rule.boss_id,
     spellId: rule.spell_id,
     name: rule.name,
+    icon: rule.icon ?? undefined,
     category: rule.category as MechanicRule["category"],
     severity: rule.severity as MechanicRule["severity"],
     weight: rule.weight,
@@ -205,7 +207,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     if (!row.player_id) continue;
     const pull = pullById.get(row.pull_id);
     if (!pull) continue;
-    const details = parseJson<{ ability?: string; detail?: string }>(row.details_json, {});
+    const details = parseJson<{ ability?: string; icon?: string; detail?: string }>(row.details_json, {});
     const kind: RaidEvent["kind"] = row.outcome === "death" || row.event_type === "death"
       ? "death"
       : row.outcome === "warning" ? "warning"
@@ -216,6 +218,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       playerId: row.player_id,
       spellId: row.spell_id,
       ability: details.ability ?? `Spell ${row.spell_id}`,
+      icon: details.icon,
       detail: details.detail ?? "Recorded by Warcraft Logs",
       timestamp: eventTime(row.timestamp, pull.start_time),
       kind,

@@ -51,7 +51,11 @@ export async function POST(request: Request) {
     for (const [code, storedPulls] of pullsByReport) {
       const { report, token } = await fetchReportOverview(code, credentials);
       const actors = report.masterData?.actors ?? [];
-      const abilities = new Map((report.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
+      const abilities = new Map((report.masterData?.abilities ?? []).map((ability) => [ability.gameID, { name: ability.name, icon: ability.icon }]));
+      const iconUpdates = [...abilities.entries()]
+        .filter((entry): entry is [number, { name: string; icon: string }] => Boolean(entry[1].icon))
+        .map(([spellId, ability]) => db.prepare("UPDATE mechanic_rules SET icon = ? WHERE spell_id = ?").bind(ability.icon, spellId));
+      if (iconUpdates.length) await db.batch(iconUpdates);
       const scoredRules = ruleResult.results
         .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context");
       const scoredSpellIds = scoredRules.map((rule) => rule.spell_id);

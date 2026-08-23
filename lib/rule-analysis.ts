@@ -106,7 +106,7 @@ export async function analyzeFightRules({
   rules: StoredRule[];
   participantIds: Map<number, string>;
   participantRoles: Map<string, string>;
-  abilities: Map<number, string>;
+  abilities: Map<number, { name: string; icon?: string | null }>;
   contextEvents: RuleContextEvents;
   eventPages?: Map<number, unknown[]>;
   resetExisting?: boolean;
@@ -162,9 +162,10 @@ export async function analyzeFightRules({
       const detail = scoringMode === "success"
         ? `${rule.category} completed${amountDetail}.`
         : `${rule.severity} ${rule.category.toLowerCase()} finding${amountDetail}.`;
-      const ability = abilities.get(rule.spell_id) ?? rule.name;
+      const abilityMetadata = abilities.get(rule.spell_id);
+      const ability = abilityMetadata?.name ?? rule.name;
       await db.prepare("INSERT INTO events (id, pull_id, player_id, rule_id, spell_id, event_type, timestamp, amount, outcome, details_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(makeId("event"), pullId, playerId, rule.id, rule.spell_id, String(event.type ?? rule.event_type), timestamp, amount || null, outcome, JSON.stringify({ ability, detail, severity: rule.severity, source: "Warcraft Logs" })).run();
+        .bind(makeId("event"), pullId, playerId, rule.id, rule.spell_id, String(event.type ?? rule.event_type), timestamp, amount || null, outcome, JSON.stringify({ ability, icon: abilityMetadata?.icon ?? undefined, detail, severity: rule.severity, source: "Warcraft Logs" })).run();
       if (scoringMode === "penalty") penalties.set(playerId, (penalties.get(playerId) ?? 0) + rule.weight);
       eventRows += 1;
     }

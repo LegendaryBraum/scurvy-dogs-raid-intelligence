@@ -1,9 +1,9 @@
 "use client";
 
-/* eslint-disable jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
+/* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { DashboardData, MechanicRule, ModuleSettings, RosterMember, ScoreKey } from "../../lib/types";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import type { DashboardData, MechanicRule, ModuleSettings, RaidEvent, RosterMember, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
 type ImportFight = { id: number; name: string; pullNumber: number; difficulty: string; duration: string; result: string; playerCount: number };
@@ -48,6 +48,26 @@ function ruleEffect(rule: MechanicRule) {
   return `−${rule.weight}`;
 }
 
+function spellReferenceUrl(spellId: number) {
+  return `https://www.wowhead.com/spell=${spellId}`;
+}
+
+function spellIconUrl(icon?: string) {
+  if (!icon) return null;
+  if (/^https?:\/\//i.test(icon)) return icon;
+  const filename = icon.split("/").at(-1)?.replace(/\.(?:jpe?g|png|webp)$/i, "").toLowerCase();
+  return filename ? `https://wow.zamimg.com/images/wow/icons/large/${encodeURIComponent(filename)}.jpg` : null;
+}
+
+function SpellIcon({ spellId, icon, name }: { spellId: number; icon?: string; name: string }) {
+  const source = spellIconUrl(icon);
+  return <a aria-label={`Look up ${name}, Spell ${spellId}`} className="spell-icon-link" href={spellReferenceUrl(spellId)} rel="noreferrer" target="_blank" title={`Look up ${name} · Spell ${spellId}`}><span className="spell-icon-fallback">?</span>{source && <img alt="" className="spell-icon" onError={(event) => { event.currentTarget.style.display = "none"; }} src={source} />}</a>;
+}
+
+function EventSpell({ event, fallbackIcon }: { event: RaidEvent; fallbackIcon?: string }) {
+  return <span className="event-spell"><SpellIcon icon={event.icon ?? fallbackIcon} name={event.ability} spellId={event.spellId} /><span aria-hidden="true" className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span></span>;
+}
+
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
   const [initialData, setInitialData] = useState(fallbackData);
   const [view, setView] = useState<View>("player");
@@ -67,6 +87,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [moduleStatus, setModuleStatus] = useState("");
   const [rosterStatus, setRosterStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const requestedIconSets = useRef(new Set<string>());
 
   function applyDashboard(nextData: DashboardData) {
     const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
@@ -95,6 +116,39 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    const allEvents = [...initialData.events, ...Object.values(initialData.pullEvents ?? {}).flat()];
+    const missingSpellIds = [...new Set([
+      ...rules.filter((rule) => !rule.icon).map((rule) => rule.spellId),
+      ...allEvents.filter((event) => !event.icon).map((event) => event.spellId),
+    ].filter((spellId) => Number.isInteger(spellId) && spellId > 0))].sort((a, b) => a - b);
+    if (!initialData.reportCode || !missingSpellIds.length) return;
+    const requestKey = `${initialData.reportCode}:${missingSpellIds.join(",")}`;
+    if (requestedIconSets.current.has(requestKey)) return;
+    requestedIconSets.current.add(requestKey);
+    let active = true;
+    fetch("/api/spell-icons", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportCode: initialData.reportCode, spellIds: missingSpellIds }),
+    })
+      .then(async (response) => response.ok ? response.json() as Promise<{ icons: Record<string, string> }> : null)
+      .then((result) => {
+        if (!active || !result?.icons) return;
+        const withRuleIcons = (items: MechanicRule[]) => items.map((rule) => ({ ...rule, icon: rule.icon ?? result.icons[String(rule.spellId)] }));
+        const withEventIcons = (items: RaidEvent[]) => items.map((event) => ({ ...event, icon: event.icon ?? result.icons[String(event.spellId)] }));
+        setRules((current) => withRuleIcons(current));
+        setInitialData((current) => ({
+          ...current,
+          rules: withRuleIcons(current.rules),
+          events: withEventIcons(current.events),
+          pullEvents: current.pullEvents ? Object.fromEntries(Object.entries(current.pullEvents).map(([id, events]) => [id, withEventIcons(events)])) : current.pullEvents,
+        }));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [initialData.events, initialData.pullEvents, initialData.reportCode, rules]);
+
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
   const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
@@ -109,6 +163,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
   const mechanicsScore = moduleSettings.mechanics ? player.scores.mechanics : null;
   const matchedRules = activeRules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
+  const rulesBySpellId = new Map(activeRules.map((rule) => [rule.spellId, rule]));
   const heroSummary = moduleSettings.mechanics
     ? player.summary
     : moduleSettings.performance
@@ -208,6 +263,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       weight: Number(form.get("weight")), eventType: String(form.get("eventType")) as MechanicRule["eventType"],
       difficulties: form.getAll("difficulty").map(String), roles: form.getAll("role").map(String),
       condition: { minAmount: Number(form.get("minAmount")) || undefined, countOncePerCast: form.get("countOnce") === "on", ignoreTanks: form.get("ignoreTanks") === "on", scoringMode: String(form.get("scoringMode") ?? "penalty") as NonNullable<MechanicRule["condition"]["scoringMode"]>, maxOccurrencesPerPull: Number(form.get("maxOccurrencesPerPull")) || undefined, note: String(form.get("note") ?? "") || undefined },
+      icon: editingRule?.icon,
       enabled: editingRule?.enabled ?? true,
     };
     try {
@@ -339,7 +395,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <div className="score-detail-heading"><div><p className="eyebrow"><span /> {scoreLabels[activeScore]} detail</p><h2>{activeScore === "mechanics" ? "What changed the mechanic score" : activeScore === "performance" ? "How the performance score was built" : activeScore === "attendance" ? "What attendance currently covers" : "What preparation data is available"}</h2><p>{activeScore === "mechanics" ? "Actual Wipefest scoring, timeline events, and the matching encounter rules for this player." : activeScore === "performance" ? `Warcraft Logs ${player.role === "Healer" ? "healing" : "damage"} parses from this exact pull, shown with item-level context.` : activeScore === "attendance" ? "This is the first tracked raid night, so attendance is factual but not yet a meaningful trend." : "Wipefest exposed raid-level preparation, but not a trustworthy individual breakdown on the public report."}</p></div><button aria-label="Close score details" onClick={() => setActiveScore(null)} type="button">×</button></div>
           {activeScore === "mechanics" && <>
             <div className="score-detail-stats"><span><small>Player score</small><strong>{player.scores.mechanics ?? "N/A"}</strong><em>{initialData.dataSource?.label === "Live Warcraft Logs import" ? "Configured rules" : "Wipefest"}</em></span><span><small>Raid average</small><strong>{officerSummary.mechanics ?? "N/A"}</strong><em>{activePlayers.length} players</em></span><span><small>Timeline findings</small><strong>{playerEvents.length}</strong><em>{findings} need review</em></span><span><small>Matched rules</small><strong>{matchedRules.length}</strong><em>Spell-ID based</em></span></div>
-            <div className="score-detail-columns"><div><h3>Events from this pull</h3><ul className="events detail-event-list">{playerEvents.map((event) => <li key={`detail-${event.id}`}><span className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span><div><strong>{event.ability}</strong><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></div><div><h3>Rules that matched</h3><div className="detail-rule-list">{matchedRules.map((rule) => <div key={`detail-${rule.id}`}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><p><strong>{rule.name}</strong><small>Spell {rule.spellId} · weight {rule.weight}</small></p></div>)}{matchedRules.length === 0 && <p className="detail-empty">No configured rule matched this player&apos;s displayed timeline events.</p>}</div></div></div>
+            <div className="score-detail-columns"><div><h3>Events from this pull</h3><ul className="events detail-event-list">{playerEvents.map((event) => <li key={`detail-${event.id}`}><EventSpell event={event} fallbackIcon={rulesBySpellId.get(event.spellId)?.icon} /><div><a className="event-ability-link" href={spellReferenceUrl(event.spellId)} rel="noreferrer" target="_blank">{event.ability}</a><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></div><div><h3>Rules that matched</h3><div className="detail-rule-list">{matchedRules.map((rule) => <div key={`detail-${rule.id}`}><SpellIcon icon={rule.icon} name={rule.name} spellId={rule.spellId} /><p><strong>{rule.name}</strong><small><a href={spellReferenceUrl(rule.spellId)} rel="noreferrer" target="_blank">Spell {rule.spellId}</a> · weight {rule.weight}</small></p><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span></div>)}{matchedRules.length === 0 && <p className="detail-empty">No configured rule matched this player&apos;s displayed timeline events.</p>}</div></div></div>
           </>}
           {activeScore === "performance" && <><div className="score-detail-stats"><span><small>WCL parse</small><strong>{player.parse ?? "N/A"}</strong><em>{player.role === "Healer" ? "Healing" : "Damage"}</em></span><span><small>Item-level parse</small><strong>{player.ilvlParse ?? "N/A"}</strong><em>Item level {player.itemLevel ?? "—"}</em></span><span><small>Performance</small><strong>{player.scores.performance ?? "N/A"}</strong><em>Transparent blend</em></span><span><small>Active pull</small><strong>{pull?.duration}</strong><em>{pull?.label}</em></span></div><div className="detail-explanation"><strong>The current formula</strong><p>Performance = 65% Warcraft Logs parse + 35% item-level parse. It keeps raw output visible while adding context for the gear available to the player. This score does not affect Mechanics, Attendance, or Preparation.</p></div></>}
           {activeScore === "attendance" && <><div className="score-detail-stats"><span><small>Tracked nights</small><strong>1/1</strong><em>{initialData.raidNight}</em></span><span><small>Pull presence</small><strong>Yes</strong><em>Selected pull</em></span><span><small>Attendance</small><strong>{player.scores.attendance ?? "N/A"}</strong><em>First baseline</em></span><span><small>Trend confidence</small><strong>Low</strong><em>More nights needed</em></span></div><div className="detail-explanation"><strong>Why this is 100 today</strong><p>{player.name} was present for this imported raid night. This becomes a meaningful percentage after additional scheduled nights are imported.</p></div></>}
@@ -347,7 +403,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         </section>}
         {moduleSettings.mechanics && <><section className="insight-grid">
           <article className="panel takeaways"><div className="panel-heading"><div><p className="eyebrow"><span /> 10-second review</p><h2>Your pull, distilled</h2></div><span className="confidence">High confidence</span></div><div className="takeaway good"><span className="takeaway-icon">✓</span><div><strong>What went well</strong><p>{player.wins.slice(0, 2).join(" · ")}</p></div></div><div className="takeaway watch"><span className="takeaway-icon">!</span><div><strong>One thing to fix</strong><p>{player.focus[0]}</p></div></div></article>
-          <article className="panel event-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Key events</p><h2>What shaped the score</h2></div><span className="event-count">{playerEvents.length} relevant</span></div><ul className="events">{playerEvents.slice(0, 4).map((event) => <li key={event.id}><span className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span><div><strong>{event.ability}</strong><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></article>
+          <article className="panel event-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Key events</p><h2>What shaped the score</h2></div><span className="event-count">{playerEvents.length} relevant</span></div><ul className="events">{playerEvents.slice(0, 4).map((event) => <li key={event.id}><EventSpell event={event} fallbackIcon={rulesBySpellId.get(event.spellId)?.icon} /><div><a className="event-ability-link" href={spellReferenceUrl(event.spellId)} rel="noreferrer" target="_blank">{event.ability}</a><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></article>
         </section>
         <section className="lower-grid">
           <article className="panel trend-panel"><div><p className="eyebrow muted"><span /> Trend</p><h2>{player.trend.length > 1 ? `Mechanics are moving ${player.trend.at(-1)! >= player.trend[0] ? "up" : "down"}` : "First mechanics baseline"}</h2><p>{player.trend.length > 1 ? "Last six evaluated pulls" : "One calibrated pull · future raids will build the trend"}</p></div><div className="trend-bars" aria-label={`Mechanics trend: ${player.trend.join(", ")}`}>{player.trend.map((value, index) => <i key={`${value}-${index}`} style={{ height: `${value}%` }}><span>{value}</span></i>)}</div></article>
@@ -374,7 +430,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         <div className="config-filters"><label>Raid<select defaultValue={initialData.raid}><option>{initialData.raid}</option></select></label><label>Boss<select value={bossId} onChange={(event) => { chooseBoss(event.target.value); setEditingRule(null); }}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><div><span>Active rules</span><strong>{activeRules.filter((rule) => rule.bossId === bossId).length}</strong></div><button className="share-button" disabled={busy || !activeRules.some((rule) => rule.bossId === bossId)} onClick={reanalyzeBoss} type="button">Recalculate saved pulls</button></div>
         {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}
         <section className="config-grid">
-          <article className="panel rules-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Rule library</p><h2>{boss.name}</h2></div><span className="confidence">Config-driven</span></div><div className="rule-list">{rules.filter((rule) => rule.bossId === bossId).sort((a, b) => Number(b.enabled !== false) - Number(a.enabled !== false)).map((rule) => <div className={`rule-row ${rule.enabled === false ? "rule-row-paused" : ""}`} key={rule.id}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><div className="rule-copy"><strong>{rule.name}</strong><small>Spell {rule.spellId} · {rule.category}</small><p>{rule.roles.join(", ")} · {rule.difficulties.join(", ")}{rule.condition.note ? ` · ${rule.condition.note}` : ""}</p></div><div className="rule-controls"><b>{rule.enabled === false ? "Paused" : ruleEffect(rule)}</b><div><button disabled={busy} onClick={() => editRule(rule)} type="button">Edit</button><button disabled={busy} onClick={() => duplicateRule(rule)} type="button">Duplicate</button><button disabled={busy} onClick={() => toggleRule(rule)} type="button">{rule.enabled === false ? "Restore" : "Pause"}</button></div></div></div>)}{!rules.some((rule) => rule.bossId === bossId) && <div className="empty-rules">No rules for this boss yet. Add the first one beside this list.</div>}</div></article>
+          <article className="panel rules-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Rule library</p><h2>{boss.name}</h2></div><span className="confidence">Config-driven</span></div><div className="rule-list">{rules.filter((rule) => rule.bossId === bossId).sort((a, b) => Number(b.enabled !== false) - Number(a.enabled !== false)).map((rule) => <div className={`rule-row ${rule.enabled === false ? "rule-row-paused" : ""}`} key={rule.id}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><div className="rule-identity"><SpellIcon icon={rule.icon} name={rule.name} spellId={rule.spellId} /><div className="rule-copy"><strong>{rule.name}</strong><small><a href={spellReferenceUrl(rule.spellId)} rel="noreferrer" target="_blank">Spell {rule.spellId}</a> · {rule.category}</small><p>{rule.roles.join(", ")} · {rule.difficulties.join(", ")}{rule.condition.note ? ` · ${rule.condition.note}` : ""}</p></div></div><div className="rule-controls"><b>{rule.enabled === false ? "Paused" : ruleEffect(rule)}</b><div><button disabled={busy} onClick={() => editRule(rule)} type="button">Edit</button><button disabled={busy} onClick={() => duplicateRule(rule)} type="button">Duplicate</button><button disabled={busy} onClick={() => toggleRule(rule)} type="button">{rule.enabled === false ? "Restore" : "Pause"}</button></div></div></div>)}{!rules.some((rule) => rule.bossId === bossId) && <div className="empty-rules">No rules for this boss yet. Add the first one beside this list.</div>}</div></article>
           <form className="panel rule-form" key={editingRule?.id ?? "new-rule"} onSubmit={addRule}><p className="eyebrow"><span /> {editingRule ? editingRule.name.endsWith(" copy") ? "Duplicate mechanic rule" : "Edit mechanic rule" : "New mechanic rule"}</p><div className="rule-form-heading"><h2>{editingRule ? editingRule.name.endsWith(" copy") ? "Create a safe copy" : "Adjust this rule" : "Teach the analyzer"}</h2>{editingRule && <button onClick={() => { setEditingRule(null); setRuleStatus(""); }} type="button">Cancel</button>}</div><div className="form-pair"><label>Mechanic name<input defaultValue={editingRule?.name} name="name" placeholder="e.g. Gilded Wave" required /></label><label>Spell ID<input defaultValue={editingRule?.spellId} name="spellId" inputMode="numeric" placeholder="451117" required /></label></div><div className="form-pair"><label>Category<select name="category" defaultValue={editingRule?.category ?? "Avoidable damage"}><option>Avoidable damage</option><option>Mechanic failure</option><option>Interrupt</option><option>Dispel</option><option>Defensive</option><option>Soak</option><option>Utility</option></select></label><label>Event type<select name="eventType" defaultValue={editingRule?.eventType ?? "damage"}><option>damage</option><option>debuff</option><option>cast</option><option>interrupt</option><option>dispel</option><option>death</option></select></label></div><div className="form-pair"><label>Score effect<select name="scoringMode" defaultValue={editingRule ? scoringMode(editingRule) : "penalty"}><option value="penalty">Penalty · lowers Mechanics</option><option value="success">Success · evidence only</option><option value="context">Raid context · no player score</option></select></label><label>Penalty weight<input defaultValue={editingRule?.weight ?? 4} name="weight" inputMode="decimal" required /></label></div><div className="form-pair"><label>Severity<select name="severity" defaultValue={editingRule?.severity ?? "Medium"}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Maximum matches per pull<input defaultValue={editingRule?.condition.maxOccurrencesPerPull} name="maxOccurrencesPerPull" inputMode="numeric" placeholder="No limit" /></label></div><fieldset><legend>Applies on</legend>{["Normal", "Heroic", "Mythic"].map((difficulty) => <label key={difficulty}><input defaultChecked={editingRule ? editingRule.difficulties.includes(difficulty) : difficulty !== "Normal"} name="difficulty" type="checkbox" value={difficulty} /> {difficulty}</label>)}</fieldset><fieldset><legend>Roles</legend>{["Tank", "Healer", "DPS"].map((role) => <label key={role}><input defaultChecked={editingRule ? editingRule.roles.includes(role) : true} name="role" type="checkbox" value={role} /> {role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}</label>)}</fieldset><details><summary>Optional conditions</summary><label>Minimum amount<input defaultValue={editingRule?.condition.minAmount} name="minAmount" inputMode="numeric" placeholder="50000" /></label><label className="checkline"><input defaultChecked={editingRule?.condition.countOncePerCast} name="countOnce" type="checkbox" /> Count once per cast</label><label className="checkline"><input defaultChecked={editingRule?.condition.ignoreTanks} name="ignoreTanks" type="checkbox" /> Ignore tanks</label><label>Rule note<textarea defaultValue={editingRule?.condition.note} name="note" placeholder="Ignore the first unavoidable tick…" /></label></details><button className="primary-button" disabled={busy} type="submit">{editingRule ? editingRule.name.endsWith(" copy") ? "Save duplicate rule" : "Save rule changes" : "Save mechanic rule"}</button></form>
         </section>
       </section>}
