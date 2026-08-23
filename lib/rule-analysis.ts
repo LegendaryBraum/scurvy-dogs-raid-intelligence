@@ -93,6 +93,7 @@ export async function analyzeFightRules({
   participantRoles,
   abilities,
   contextEvents,
+  eventPages,
   resetExisting = false,
 }: {
   db: D1Database;
@@ -105,6 +106,7 @@ export async function analyzeFightRules({
   participantRoles: Map<string, string>;
   abilities: Map<number, string>;
   contextEvents: RuleContextEvents;
+  eventPages?: Map<number, unknown[]>;
   resetExisting?: boolean;
 }) {
   if (resetExisting) {
@@ -115,9 +117,10 @@ export async function analyzeFightRules({
   }
 
   const fetchedSpellIds = rules
+    .filter((rule) => parseJson<RuleCondition>(rule.condition_json, {}).scoringMode !== "context")
     .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
     .map((rule) => rule.spell_id);
-  const eventPages = await fetchFightEventsBatch(reportCode, fight.id, fetchedSpellIds, token);
+  const resolvedEventPages = eventPages ?? await fetchFightEventsBatch(reportCode, fight.id, fetchedSpellIds, token);
   const difficulty = difficultyNames[fight.difficulty ?? 0] ?? "Unknown";
   const penalties = new Map<string, number>();
   const occurrences = new Map<string, number>();
@@ -131,7 +134,7 @@ export async function analyzeFightRules({
     const scoringMode = condition.scoringMode ?? (["Interrupt", "Dispel", "Defensive", "Soak", "Utility"].includes(rule.category) ? "success" : "penalty");
     if (scoringMode === "context") continue;
 
-    for (const raw of candidateEvents(rule, eventPages, contextEvents)) {
+    for (const raw of candidateEvents(rule, resolvedEventPages, contextEvents)) {
       const preferSource = ["cast", "interrupt", "dispel"].includes(rule.event_type);
       const playerId = participantIds.get(eventActorId(raw, preferSource));
       if (!playerId) continue;

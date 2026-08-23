@@ -1,6 +1,6 @@
 import { ensureSchema, getRuntimeEnv } from "../../../db/runtime";
 import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
-import { fetchFightContextEvents, fetchReportOverview } from "../../../lib/warcraft-logs";
+import { fetchFightAnalysisEvents, fetchReportOverview } from "../../../lib/warcraft-logs";
 
 export const runtime = "edge";
 
@@ -16,6 +16,8 @@ type PullPlayerRow = {
   name: string;
   role: string;
 };
+
+function parseJson<T>(value: string, fallback: T): T { try { return JSON.parse(value) as T; } catch { return fallback; } }
 
 export async function POST(request: Request) {
   try {
@@ -65,7 +67,12 @@ export async function POST(request: Request) {
           participantIds.set(actorId, player.player_id);
           participantRoles.set(player.player_id, player.role);
         }
-        const contextEvents = await fetchFightContextEvents(code, fight.id, token);
+        const scoredSpellIds = ruleResult.results
+          .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
+          .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
+          .map((rule) => rule.spell_id);
+        const analysisEvents = await fetchFightAnalysisEvents(code, fight.id, scoredSpellIds, token);
+        const contextEvents = { deaths: analysisEvents.deaths, interrupts: analysisEvents.interrupts, dispels: analysisEvents.dispels };
         const result = await analyzeFightRules({
           db,
           reportCode: code,
@@ -77,6 +84,7 @@ export async function POST(request: Request) {
           participantRoles,
           abilities,
           contextEvents,
+          eventPages: analysisEvents.eventsByAbility,
           resetExisting: true,
         });
         events += result.eventRows;

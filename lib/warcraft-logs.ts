@@ -116,16 +116,25 @@ async function getAccessToken(credentials: WarcraftLogsCredentials) {
 }
 
 async function graphQL<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
-  const response = await fetch("https://www.warcraftlogs.com/api/v2/client", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
-  const payload = await response.json() as { data?: T; errors?: { message: string }[] };
-  if (!response.ok || payload.errors?.length || !payload.data) {
-    throw new Error(payload.errors?.[0]?.message ?? `Warcraft Logs request failed (${response.status}).`);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch("https://www.warcraftlogs.com/api/v2/client", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (response.status === 429 && attempt < 3) {
+      const retryAfter = Number(response.headers.get("Retry-After"));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 650 * (attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+    const payload = await response.json() as { data?: T; errors?: { message: string }[] };
+    if (!response.ok || payload.errors?.length || !payload.data) {
+      throw new Error(payload.errors?.[0]?.message ?? `Warcraft Logs request failed (${response.status}).`);
+    }
+    return payload.data;
   }
-  return payload.data;
+  throw new Error("Warcraft Logs is temporarily rate limiting analysis requests. Try recalculating again in a moment.");
 }
 
 export async function fetchReportOverview(code: string, credentials: WarcraftLogsCredentials) {
@@ -302,6 +311,36 @@ export async function fetchFightEventsBatch(code: string, fightId: number, abili
   `, variables);
   const report = data.reportData.report ?? {};
   return new Map(uniqueIds.map((abilityId, index) => [abilityId, report[`events${index}`]?.data ?? []]));
+}
+
+export async function fetchFightAnalysisEvents(code: string, fightId: number, abilityIds: number[], token: string) {
+  const uniqueIds = [...new Set(abilityIds.filter((abilityId) => Number.isInteger(abilityId) && abilityId > 0))];
+  const variables: Record<string, unknown> = { code, fightId };
+  const declarations = uniqueIds.map((_, index) => `$ability${index}: Float!`).join(", ");
+  const fields = uniqueIds.map((abilityId, index) => {
+    variables[`ability${index}`] = abilityId;
+    return `events${index}: events(fightIDs: [$fightId], abilityID: $ability${index}, limit: 10000) { data }`;
+  }).join("\n");
+  type EventPage = { data?: unknown[] };
+  const data = await graphQL<{ reportData: { report: Record<string, EventPage> | null } }>(token, `
+    query FightAnalysis($code: String!, $fightId: Int!${declarations ? `, ${declarations}` : ""}) {
+      reportData {
+        report(code: $code, allowUnlisted: true) {
+          deaths: events(fightIDs: [$fightId], dataType: Deaths, limit: 1000) { data }
+          interrupts: events(fightIDs: [$fightId], dataType: Interrupts, limit: 1000) { data }
+          dispels: events(fightIDs: [$fightId], dataType: Dispels, limit: 1000) { data }
+          ${fields}
+        }
+      }
+    }
+  `, variables);
+  const report = data.reportData.report ?? {};
+  return {
+    deaths: report.deaths?.data ?? [],
+    interrupts: report.interrupts?.data ?? [],
+    dispels: report.dispels?.data ?? [],
+    eventsByAbility: new Map(uniqueIds.map((abilityId, index) => [abilityId, report[`events${index}`]?.data ?? []])),
+  };
 }
 
 export async function fetchFightContextEvents(code: string, fightId: number, token: string) {

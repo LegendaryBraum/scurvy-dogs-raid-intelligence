@@ -28,9 +28,10 @@ test("server-renders the player-first dashboard", async () => {
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, dashboard, scoring, schema, share, warcraftLogs, roster] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/dashboard-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/scoring.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
@@ -51,7 +52,9 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(warcraftLogs, /participatingPlayerIds\.size/);
   assert.match(warcraftLogs, /keystoneAffixes/);
   assert.match(warcraftLogs, /gameZone/);
-  assert.match(importer, /fetchFightContextEvents/);
+  assert.match(importer, /fetchFightAnalysisEvents/);
+  assert.match(reanalyzer, /resetExisting: true/);
+  assert.match(warcraftLogs, /response\.status === 429/);
   assert.match(importer, /selectedFightIds\.has\(fight\.id\)/);
   assert.match(importer, /Review the report and select at least one pull/);
   assert.doesNotMatch(importer, /demoOverview|sourceMode = "demo"/);

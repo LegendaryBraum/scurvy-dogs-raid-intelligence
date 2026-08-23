@@ -1,6 +1,6 @@
 import { ensureSchema, getRuntimeEnv, makeId } from "../../../db/runtime";
 import {
-  fetchFightContextEvents,
+  fetchFightAnalysisEvents,
   fetchReportOverview,
   fetchReportPreview,
   parseRankingRows,
@@ -48,6 +48,10 @@ function eventActorId(value: unknown, preferSource = false) {
 
 function eventTimestamp(value: unknown, fallback: number) {
   return number(record(value).timestamp) || fallback;
+}
+
+function parseJson<T>(value: string, fallback: T): T {
+  try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
 async function removeDemoReport(db: D1Database, reportId: string) {
@@ -181,7 +185,12 @@ export async function POST(request: Request) {
         }
 
         const configured = await db.prepare("SELECT * FROM mechanic_rules WHERE boss_id = ? AND enabled = 1").bind(bossId).all<StoredRule>();
-        const contextEvents = await fetchFightContextEvents(requested.code, fight.id, token);
+        const scoredSpellIds = configured.results
+          .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
+          .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
+          .map((rule) => rule.spell_id);
+        const analysisEvents = await fetchFightAnalysisEvents(requested.code, fight.id, scoredSpellIds, token);
+        const contextEvents = { deaths: analysisEvents.deaths, interrupts: analysisEvents.interrupts, dispels: analysisEvents.dispels };
 
         const addContextEvents = async (kind: "death" | "interrupt" | "dispel", values: unknown[]) => {
           for (const raw of values) {
@@ -214,6 +223,7 @@ export async function POST(request: Request) {
           participantRoles,
           abilities,
           contextEvents,
+          eventPages: analysisEvents.eventsByAbility,
         });
         eventRows += analyzed.eventRows;
       }
