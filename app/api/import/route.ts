@@ -187,12 +187,11 @@ export async function POST(request: Request) {
         }
 
         const configured = await db.prepare("SELECT * FROM mechanic_rules WHERE boss_id = ? AND enabled = 1").bind(bossId).all<StoredRule>();
-        const scoredSpellIds = configured.results
+        const scoredRules = configured.results
           .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
-          .filter((rule) => !["dispel", "interrupt", "death"].includes(rule.event_type))
-          .map((rule) => rule.spell_id);
+        const scoredSpellIds = scoredRules.map((rule) => rule.spell_id);
         const [ruleEvents, contextEvents] = await Promise.all([
-          fetchRuleEvents(requested.code, [fight.id], scoredSpellIds, token),
+          fetchRuleEvents(requested.code, [fight.id], scoredRules.map((rule) => ({ spellId: rule.spell_id, eventType: rule.event_type })), token),
           fetchFightContextEvents(requested.code, fight.id, token),
         ]);
 

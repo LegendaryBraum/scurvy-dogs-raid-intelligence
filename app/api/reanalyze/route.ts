@@ -52,10 +52,10 @@ export async function POST(request: Request) {
       const { report, token } = await fetchReportOverview(code, credentials);
       const actors = report.masterData?.actors ?? [];
       const abilities = new Map((report.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
-      const scoredSpellIds = ruleResult.results
+      const scoredRules = ruleResult.results
         .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
-        .map((rule) => rule.spell_id);
-      const reportRuleEvents = await fetchRuleEvents(code, storedPulls.map((pull) => pull.fight_id), scoredSpellIds, token);
+      const scoredSpellIds = scoredRules.map((rule) => rule.spell_id);
+      const reportRuleEvents = await fetchRuleEvents(code, storedPulls.map((pull) => pull.fight_id), scoredRules.map((rule) => ({ spellId: rule.spell_id, eventType: rule.event_type })), token);
       for (const storedPull of storedPulls) {
         const fight = report.fights.find((candidate) => candidate.id === storedPull.fight_id);
         if (!fight) continue;

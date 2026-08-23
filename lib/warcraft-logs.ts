@@ -343,11 +343,26 @@ export async function fetchFightAnalysisEvents(code: string, fightId: number, ab
   };
 }
 
-export async function fetchRuleEvents(code: string, fightIds: number[], abilityIds: number[], token: string) {
-  const uniqueIds = [...new Set(abilityIds.filter((abilityId) => Number.isInteger(abilityId) && abilityId > 0))];
-  if (!uniqueIds.length || !fightIds.length) return [];
-  const idList = uniqueIds.join(", ");
-  const filterExpression = `ability.id IN (${idList}) OR stoppedAbility.id IN (${idList}) OR killingAbility.id IN (${idList})`;
+export type RuleEventFilter = { spellId: number; eventType: string };
+
+export async function fetchRuleEvents(code: string, fightIds: number[], filters: RuleEventFilter[], token: string) {
+  const validFilters = filters.filter((filter) => Number.isInteger(filter.spellId) && filter.spellId > 0);
+  if (!validFilters.length || !fightIds.length) return [];
+  const clauses: string[] = [];
+  const eventTypes = ["damage", "debuff", "cast", "dispel", "interrupt", "death"];
+  for (const eventType of eventTypes) {
+    const ids = [...new Set(validFilters.filter((filter) => filter.eventType === eventType).map((filter) => filter.spellId))];
+    if (!ids.length) continue;
+    const idList = ids.join(", ");
+    if (eventType === "damage") clauses.push(`(type = "damage" AND ability.id IN (${idList}))`);
+    if (eventType === "debuff") clauses.push(`(type IN ("applydebuff", "applydebuffstack", "refreshdebuff") AND ability.id IN (${idList}))`);
+    if (eventType === "cast") clauses.push(`(type IN ("cast", "begincast") AND ability.id IN (${idList}))`);
+    if (eventType === "dispel") clauses.push(`(type = "dispel" AND stoppedAbility.id IN (${idList}))`);
+    if (eventType === "interrupt") clauses.push(`(type = "interrupt" AND stoppedAbility.id IN (${idList}))`);
+    if (eventType === "death") clauses.push(`(type = "death" AND killingAbility.id IN (${idList}))`);
+  }
+  if (!clauses.length) return [];
+  const filterExpression = clauses.join(" OR ");
   const data = await graphQL<{ reportData: { report: { events: { data?: unknown[] } } | null } }>(token, `
     query RuleEvents($code: String!, $fightIds: [Int], $filterExpression: String!) {
       reportData {
