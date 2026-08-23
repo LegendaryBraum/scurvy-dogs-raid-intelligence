@@ -66,6 +66,10 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Save rule changes/);
   assert.match(app, /Keep the season history clean/);
   assert.match(app, /Link mains and alternate characters/);
+  assert.match(app, /Roster & alts/);
+  assert.match(app, /Clean roster, then link/);
+  assert.match(app, /role="tabpanel"/);
+  assert.ok(app.indexOf("<RosterManager members") < app.indexOf("<IdentityManager members"));
   assert.match(app, /Night-by-night/);
   assert.match(app, /Replace \/ reimport/);
   assert.match(app, /function SpellIcon/);
