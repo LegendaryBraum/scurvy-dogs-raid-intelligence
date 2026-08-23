@@ -1,12 +1,20 @@
 "use client";
 
+/* eslint-disable jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
+
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { DashboardData, MechanicRule, ScoreKey } from "../../lib/types";
+import type { DashboardData, MechanicRule, RosterMember, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[] };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
+
+function RosterManager({ members, busy, status, onToggle }: { members: RosterMember[]; busy: boolean; status: string; onToggle: (member: RosterMember) => void }) {
+  const activeCount = members.filter((member) => member.included).length;
+  const ignoredCount = members.length - activeCount;
+  return <article className="panel roster-manager"><div className="roster-manager-heading"><div><p className="eyebrow muted"><span /> Raid roster</p><h2>Choose who belongs in the analysis</h2><p>Keep regular raiders active. Ignore pugs so they disappear from dashboards, officer comparisons, private reports, and raid averages. Their original log data stays available if you restore them later.</p></div><div className="roster-counts"><span><strong>{activeCount}</strong><small>Active</small></span><span className="ignored"><strong>{ignoredCount}</strong><small>Ignored</small></span></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="roster-list" role="list">{[...members].sort((a, b) => Number(b.included) - Number(a.included) || a.name.localeCompare(b.name)).map((member) => <div className={`roster-member ${member.included ? "" : "roster-member-ignored"}`} key={member.id} role="listitem"><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><div className="roster-identity"><strong>{member.name}</strong><small>{member.spec} {member.className}{member.realm ? ` · ${member.realm}` : ""}</small></div><span className="roster-role">{member.role}</span><span className="roster-history"><strong>{member.pullsSeen}</strong><small>pull{member.pullsSeen === 1 ? "" : "s"} · {member.raidNights} night{member.raidNights === 1 ? "" : "s"}</small></span><span className={`roster-state ${member.included ? "included" : "excluded"}`}>{member.included ? "Active" : "Ignored"}</span><button aria-label={`${member.included ? "Ignore" : "Restore"} ${member.name}`} disabled={busy} onClick={() => onToggle(member)} type="button">{member.included ? "Ignore guest" : "Restore"}</button></div>)}</div></article>;
+}
 
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
   const [initialData, setInitialData] = useState(fallbackData);
@@ -22,7 +30,19 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [importStatus, setImportStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [ruleStatus, setRuleStatus] = useState("");
+  const [rosterStatus, setRosterStatus] = useState("");
   const [busy, setBusy] = useState(false);
+
+  function applyDashboard(nextData: DashboardData) {
+    const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
+    const nextPullId = nextData.pulls.some((candidate) => candidate.id === pullId) ? pullId : nextData.pulls.find((candidate) => candidate.bossId === nextBossId)?.id ?? nextData.pulls[0].id;
+    const nextPlayers = nextData.pullPlayers?.[nextPullId] ?? nextData.players;
+    setInitialData(nextData);
+    setBossId(nextBossId);
+    setPullId(nextPullId);
+    setPlayerId(nextPlayers.some((candidate) => candidate.id === playerId) ? playerId : nextPlayers[0].id);
+    setRules(nextData.rules);
+  }
 
   useEffect(() => {
     let active = true;
@@ -44,6 +64,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
   const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
   const activePlayers = initialData.pullPlayers?.[pull?.id ?? pullId] ?? initialData.players;
+  const rosterMembers = initialData.roster ?? initialData.players.map((candidate) => ({ id: candidate.id, name: candidate.name, realm: candidate.realm, className: candidate.className, spec: candidate.spec, role: candidate.role, pullsSeen: initialData.pulls.length, raidNights: 1, lastSeen: null, included: true }));
   const player = activePlayers.find((candidate) => candidate.id === playerId) ?? activePlayers[0] ?? initialData.players[0];
   const activeEvents = initialData.pullEvents?.[pull?.id ?? pullId] ?? initialData.events;
   const playerEvents = activeEvents.filter((event) => event.playerId === player.id);
@@ -123,6 +144,23 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     finally { setBusy(false); }
   }
 
+  async function updateRoster(member: RosterMember) {
+    const included = !member.included;
+    setBusy(true);
+    setRosterStatus(`${included ? "Restoring" : "Ignoring"} ${member.name}…`);
+    try {
+      const response = await fetch("/api/roster", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId: member.id, included }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "The roster could not be updated.");
+      const dashboardResponse = await fetch("/api/dashboard");
+      const dashboardResult = await dashboardResponse.json() as { data?: DashboardData; error?: string };
+      if (!dashboardResponse.ok || !dashboardResult.data) throw new Error(dashboardResult.error ?? "The refreshed roster could not be loaded.");
+      applyDashboard(dashboardResult.data);
+      setRosterStatus(included ? `${member.name} is active again and included everywhere.` : `${member.name} is now ignored across dashboards, comparisons, averages, and sharing.`);
+    } catch (error) { setRosterStatus(error instanceof Error ? error.message : "The roster could not be updated."); }
+    finally { setBusy(false); }
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -198,6 +236,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       {view === "configure" && <section className="dashboard config-view" id="configure">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Encounter configuration</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Import reports</button></div>
         <div className="section-hero"><div><h1>Define what matters once.</h1><p>The engine stays the same. Each raid tier is maintained here as a set of readable, editable mechanic rules.</p></div><div className="engine-note"><span>Configuration</span><b>→</b><span>Analysis engine</span><b>→</b><span>Four scores</span></div></div>
+        <RosterManager members={rosterMembers} busy={busy} status={rosterStatus} onToggle={updateRoster} />
         <div className="config-filters"><label>Raid<select defaultValue={initialData.raid}><option>{initialData.raid}</option></select></label><label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><div><span>Active rules</span><strong>{rules.filter((rule) => rule.bossId === bossId).length}</strong></div></div>
         <section className="config-grid">
           <article className="panel rules-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Rule library</p><h2>{boss.name}</h2></div><span className="confidence">Config-driven</span></div><div className="rule-list">{rules.filter((rule) => rule.bossId === bossId).map((rule) => <div className="rule-row" key={rule.id}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><div><strong>{rule.name}</strong><small>Spell {rule.spellId} · {rule.category}</small><p>{rule.roles.join(", ")} · {rule.difficulties.join(", ")}{rule.condition.note ? ` · ${rule.condition.note}` : ""}</p></div><b>−{rule.weight}</b></div>)}{!rules.some((rule) => rule.bossId === bossId) && <div className="empty-rules">No rules for this boss yet. Add the first one beside this list.</div>}</div></article>

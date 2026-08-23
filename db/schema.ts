@@ -39,6 +39,12 @@ export const players = sqliteTable("players", {
   className: text("class_name").notNull(), role: text("role").notNull().default("DPS"),
 }, (table) => [uniqueIndex("idx_players_identity").on(table.name, table.realm)]);
 
+export const playerRosterSettings = sqliteTable("player_roster_settings", {
+  playerId: text("player_id").primaryKey().references(() => players.id),
+  included: integer("included", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_player_roster_settings_included").on(table.included)]);
+
 export const pullPlayers = sqliteTable("pull_players", {
   id: text("id").primaryKey(), pullId: text("pull_id").notNull().references(() => pulls.id),
   playerId: text("player_id").notNull().references(() => players.id), spec: text("spec").notNull().default("Unknown"),

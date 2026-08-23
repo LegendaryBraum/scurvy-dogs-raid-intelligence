@@ -1,8 +1,9 @@
 import { ensureSchema } from "../db/runtime";
-import type { DashboardData, MechanicRule, PlayerSnapshot, RaidEvent, ScoreKey } from "./types";
+import type { DashboardData, MechanicRule, PlayerSnapshot, RaidEvent, RosterMember, ScoreKey } from "./types";
 
 type ReportRow = {
   id: string;
+  season_id: string;
   code: string;
   url: string;
   title: string;
@@ -10,6 +11,19 @@ type ReportRow = {
   start_time: number;
   season_name: string;
   raid_night: string;
+};
+
+type RosterRow = {
+  player_id: string;
+  name: string;
+  realm: string;
+  class_name: string;
+  role: string;
+  spec: string;
+  pulls_seen: number;
+  raid_nights: number;
+  last_seen: number | null;
+  included: number;
 };
 
 type PullRow = {
@@ -91,7 +105,7 @@ function average(players: PlayerSnapshot[], key: ScoreKey) {
 export async function loadLatestDashboardData(): Promise<DashboardData | null> {
   const db = await ensureSchema();
   const report = await db.prepare(`
-    SELECT r.id, r.code, r.url, r.title, r.zone_name, r.start_time,
+    SELECT r.id, rn.season_id, r.code, r.url, r.title, r.zone_name, r.start_time,
            s.name AS season_name, rn.name AS raid_night
     FROM reports r
     JOIN raid_nights rn ON rn.id = r.raid_night_id
@@ -102,7 +116,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
   `).first<ReportRow>();
   if (!report) return null;
 
-  const [pullResult, playerResult, eventResult, ruleResult] = await Promise.all([
+  const [pullResult, playerResult, eventResult, ruleResult, rosterResult] = await Promise.all([
     db.prepare(`
       SELECT pu.id, pu.boss_id, b.name AS boss_name, pu.fight_id, pu.pull_number, pu.difficulty,
              pu.killed, pu.start_time, pu.end_time, pu.boss_percentage
@@ -116,13 +130,17 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       FROM pull_players pp
       JOIN players p ON p.id = pp.player_id
       JOIN pulls pu ON pu.id = pp.pull_id
-      WHERE pu.report_id = ?
+      LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
+      WHERE pu.report_id = ? AND COALESCE(prs.included, 1) = 1
       ORDER BY pu.start_time DESC, p.name
     `).bind(report.id).all<PullPlayerRow>(),
     db.prepare(`
       SELECT e.id, e.pull_id, e.player_id, e.spell_id, e.event_type, e.timestamp, e.amount, e.outcome, e.details_json
-      FROM events e JOIN pulls pu ON pu.id = e.pull_id
-      WHERE pu.report_id = ? ORDER BY e.timestamp
+      FROM events e
+      JOIN pulls pu ON pu.id = e.pull_id
+      LEFT JOIN player_roster_settings prs ON prs.player_id = e.player_id
+      WHERE pu.report_id = ? AND COALESCE(prs.included, 1) = 1
+      ORDER BY e.timestamp
     `).bind(report.id).all<EventRow>(),
     db.prepare(`
       SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.category, mr.severity,
@@ -130,6 +148,23 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id
       WHERE pu.report_id = ? AND mr.enabled = 1 ORDER BY mr.updated_at DESC
     `).bind(report.id).all<RuleRow>(),
+    db.prepare(`
+      SELECT p.id AS player_id, p.name, p.realm, p.class_name, p.role,
+             MAX(pp.spec) AS spec,
+             COUNT(DISTINCT pp.pull_id) AS pulls_seen,
+             COUNT(DISTINCT r.raid_night_id) AS raid_nights,
+             MAX(r.start_time) AS last_seen,
+             COALESCE(prs.included, 1) AS included
+      FROM players p
+      JOIN pull_players pp ON pp.player_id = p.id
+      JOIN pulls pu ON pu.id = pp.pull_id
+      JOIN reports r ON r.id = pu.report_id
+      JOIN raid_nights rn ON rn.id = r.raid_night_id
+      LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
+      WHERE rn.season_id = ? AND r.source_mode = 'live'
+      GROUP BY p.id, p.name, p.realm, p.class_name, p.role, prs.included
+      ORDER BY COALESCE(prs.included, 1) DESC, p.name
+    `).bind(report.season_id).all<RosterRow>(),
   ]);
 
   const pullRows = pullResult.results;
@@ -237,6 +272,18 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     difficulty: difficultyNames[pull.difficulty ?? 0] ?? "Unknown",
   }));
   const bosses = [...new Map(pullRows.map((pull) => [pull.boss_id, { id: pull.boss_id, name: pull.boss_name }])).values()];
+  const roster: RosterMember[] = rosterResult.results.map((row) => ({
+    id: row.player_id,
+    name: row.name,
+    realm: row.realm,
+    className: row.class_name,
+    spec: row.spec,
+    role: (["Tank", "Healer", "DPS"].includes(row.role) ? row.role : "DPS") as RosterMember["role"],
+    pullsSeen: Number(row.pulls_seen),
+    raidNights: Number(row.raid_nights),
+    lastSeen: row.last_seen === null ? null : Number(row.last_seen),
+    included: Boolean(row.included),
+  }));
   const firstPullId = pulls[0].id;
   const players = pullPlayers[firstPullId] ?? [];
   const raidAverages = {
@@ -254,6 +301,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     bosses,
     pulls,
     players,
+    roster,
     events: pullEvents[firstPullId] ?? [],
     pullPlayers,
     pullEvents,

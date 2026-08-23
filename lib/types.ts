@@ -22,6 +22,20 @@ export type PlayerSnapshot = {
   interrupts: number;
   dispels: number;
   avoidableDamage: number;
+  raidAverages?: Record<ScoreKey, ScoreValue>;
+};
+
+export type RosterMember = {
+  id: string;
+  name: string;
+  realm: string;
+  className: string;
+  spec: string;
+  role: "Tank" | "Healer" | "DPS";
+  pullsSeen: number;
+  raidNights: number;
+  lastSeen: number | null;
+  included: boolean;
 };
 
 export type RaidEvent = {
@@ -62,6 +76,7 @@ export type DashboardData = {
   bosses: { id: string; name: string }[];
   pulls: { id: string; bossId: string; label: string; killed: boolean; duration: string; difficulty: string }[];
   players: PlayerSnapshot[];
+  roster?: RosterMember[];
   events: RaidEvent[];
   pullPlayers?: Record<string, PlayerSnapshot[]>;
   pullEvents?: Record<string, RaidEvent[]>;

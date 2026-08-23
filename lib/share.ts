@@ -8,13 +8,22 @@ export async function getSharedPlayer(token: string): Promise<PlayerSnapshot | n
     const db = await ensureSchema();
     const row = await db.prepare(`
       SELECT p.id, p.name, p.realm, p.class_name AS className, p.role, s.pull_id AS pullId, s.expires_at AS expiresAt
-      FROM shares s JOIN players p ON p.id = s.player_id
-      WHERE s.token = ?
+      FROM shares s
+      JOIN players p ON p.id = s.player_id
+      LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
+      WHERE s.token = ? AND COALESCE(prs.included, 1) = 1
     `).bind(token).first<{ id: string; name: string; realm: string; className: string; role: string; pullId: string | null; expiresAt: string | null }>();
     if (!row || (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now())) return null;
     const dashboard = await loadLatestDashboardData();
     const imported = row.pullId ? dashboard?.pullPlayers?.[row.pullId]?.find((player) => player.id === row.id) : undefined;
-    if (imported) return imported;
+    if (imported) {
+      const comparisonPlayers = dashboard?.pullPlayers?.[row.pullId ?? ""] ?? [];
+      const average = (key: keyof PlayerSnapshot["scores"]) => {
+        const values = comparisonPlayers.map((player) => player.scores[key]).filter((value): value is number => value !== null);
+        return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+      };
+      return { ...imported, raidAverages: { mechanics: average("mechanics"), performance: average("performance"), attendance: average("attendance"), preparation: average("preparation") } };
+    }
     const snapshot = raidData.players.find((player) => player.name.toLowerCase() === row.name.toLowerCase());
     if (snapshot) return snapshot;
     return {

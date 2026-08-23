@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { raidData } from "../../../lib/raid-data";
 import { getSharedPlayer } from "../../../lib/share";
@@ -25,10 +26,11 @@ export default async function SharedPlayerPage({ params }: Props) {
     ["Mechanics", player.scores.mechanics, "Wipefest mechanics"], ["Performance", player.scores.performance, player.parse === null ? "Not available" : `${player.parse}th percentile`],
     ["Attendance", player.scores.attendance, player.attendanceLabel], ["Preparation", player.scores.preparation, player.prepLabel],
   ] as const;
+  const raidMechanicsAverage = player.raidAverages ? player.raidAverages.mechanics : raidData.raidAverages.mechanics;
   return (
     <main className="private-shell">
       <header className="private-topbar">
-        <a className="brand" href="/" aria-label="Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Private player review</small></span></a>
+        <Link className="brand" href="/" aria-label="Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Private player review</small></span></Link>
         <span className="privacy-badge">Player-only view</span>
       </header>
       <section className="private-report">
@@ -46,7 +48,7 @@ export default async function SharedPlayerPage({ params }: Props) {
         </section>
         <section className="anonymous-context panel">
           <div><p className="eyebrow muted"><span /> Anonymous context</p><h2>How this compares</h2><p>Only raid averages are shown. No other player names or individual reports are included.</p></div>
-          <div className="average-comparison"><span>You <strong>{player.scores.mechanics}</strong></span><i><b style={{ width: `${player.scores.mechanics ?? 0}%` }} /></i><span>Raid average <strong>{raidData.raidAverages.mechanics}</strong></span><i className="average"><b style={{ width: `${raidData.raidAverages.mechanics ?? 0}%` }} /></i></div>
+          <div className="average-comparison"><span>You <strong>{player.scores.mechanics}</strong></span><i><b style={{ width: `${player.scores.mechanics ?? 0}%` }} /></i><span>Raid average <strong>{raidMechanicsAverage ?? "N/A"}</strong></span><i className="average"><b style={{ width: `${raidMechanicsAverage ?? 0}%` }} /></i></div>
         </section>
         <footer className="private-footer">This link contains only {player.name}&apos;s detail and anonymous raid context.</footer>
       </section>

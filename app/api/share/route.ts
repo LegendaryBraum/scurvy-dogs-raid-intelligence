@@ -12,7 +12,14 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json() as { playerId?: string; bossId?: string; pullId?: string };
     const db = await ensureSchema();
-    const storedPlayer = payload.playerId ? await db.prepare("SELECT id FROM players WHERE id = ?").bind(payload.playerId).first<{ id: string }>() : null;
+    const storedPlayer = payload.playerId ? await db.prepare(`
+      SELECT p.id, COALESCE(prs.included, 1) AS included
+      FROM players p LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
+      WHERE p.id = ?
+    `).bind(payload.playerId).first<{ id: string; included: number }>() : null;
+    if (storedPlayer && !storedPlayer.included) {
+      return Response.json({ error: "Ignored guests cannot receive player reports until they are restored to the roster." }, { status: 409 });
+    }
     const fallback = raidData.players.find((candidate) => candidate.id === payload.playerId) ?? raidData.players[0];
     const playerId = storedPlayer?.id ?? await stablePlayerId(fallback.name, fallback.realm);
     const token = crypto.randomUUID().replaceAll("-", "").slice(0, 20);

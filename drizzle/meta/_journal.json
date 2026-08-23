@@ -8,6 +8,13 @@
       "when": 1787038737220,
       "tag": "0000_kind_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787466342289,
+      "tag": "0001_tired_arachne",
+      "breakpoints": true
     }
   ]
 }

@@ -180,6 +180,31 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .engine-note { display: flex; align-items: center; gap: 8px; padding: 13px 15px; border-radius: 10px; color: #557077; background: #e6efed; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .engine-note b { color: var(--teal); }
+.roster-manager { margin-bottom: 14px; padding-bottom: 14px; }
+.roster-manager-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; }
+.roster-manager-heading h2 { font-size: 26px; }
+.roster-manager-heading > div:first-child > p:last-child { max-width: 760px; margin: 8px 0 0; color: #6b7b80; font-size: 10px; line-height: 1.55; }
+.roster-counts { display: flex; flex: 0 0 auto; gap: 7px; }
+.roster-counts > span { min-width: 76px; padding: 10px 12px; display: grid; gap: 2px; border-radius: 9px; color: #246e5b; background: #e7f3ef; }
+.roster-counts > span.ignored { color: #7e6f60; background: #f1ece6; }
+.roster-counts strong { font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
+.roster-counts small { font-size: 7px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.roster-status { margin: 14px 0 0; padding: 9px 11px; border-radius: 8px; color: #42656c; background: #edf5f3; font-size: 9px; }
+.roster-list { max-height: 430px; margin-top: 15px; overflow-y: auto; border-top: 1px solid #e5eceb; }
+.roster-member { min-width: 760px; padding: 11px 4px; display: grid; grid-template-columns: 32px minmax(190px, 1.5fr) .6fr .75fr .6fr 92px; align-items: center; gap: 11px; border-bottom: 1px solid #edf1f1; transition: opacity .16s ease, background .16s ease; }
+.roster-member-ignored { opacity: .62; background: #faf9f7; }
+.roster-avatar { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: #355967; font-size: 8px; font-weight: 850; }
+.roster-identity strong, .roster-identity small, .roster-history strong, .roster-history small { display: block; }
+.roster-identity strong { color: #2f474e; font-size: 10px; }
+.roster-identity small, .roster-history small { margin-top: 2px; color: #8a979a; font-size: 8px; }
+.roster-role { color: #65767b; font-size: 9px; }
+.roster-history strong { color: #405b62; font-size: 10px; }
+.roster-state { justify-self: start; padding: 5px 8px; border-radius: 20px; font-size: 7px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.roster-state.included { color: #26735d; background: #e4f2ed; }
+.roster-state.excluded { color: #80644f; background: #efe7df; }
+.roster-member > button { padding: 7px 9px; border: 1px solid #c9d7d5; border-radius: 7px; color: #49636a; background: #fff; font-size: 8px; font-weight: 800; cursor: pointer; }
+.roster-member > button:hover { color: #fff; border-color: var(--teal); background: var(--teal); }
+.roster-member > button:disabled { cursor: wait; opacity: .55; }
 .config-filters { margin-bottom: 14px; padding: 13px; display: grid; grid-template-columns: 1.2fr 1.2fr .5fr; gap: 10px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }
 .config-filters label, .rule-form label { color: #728187; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .config-filters select, .rule-form input, .rule-form select, .rule-form textarea { width: 100%; margin-top: 6px; padding: 10px; border: 1px solid #d7e1e1; border-radius: 8px; outline: none; color: #263f47; background: #fbfcfc; font-size: 11px; font-weight: 650; }
@@ -279,6 +304,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .section-hero { align-items: start; }
   .hierarchy-note, .engine-note { display: none; }
   .officer-summary { grid-template-columns: 1fr 1fr; }
+  .roster-manager-heading { align-items: start; }
 }
 
 @media (max-width: 540px) {
@@ -305,6 +331,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .fact-grid { grid-template-columns: 1fr 1fr; }
   .section-hero { margin-top: 12px; }
   .officer-summary, .config-filters { grid-template-columns: 1fr; }
+  .roster-manager-heading { display: grid; }
   .config-filters > div { display: none; }
   .form-pair { grid-template-columns: 1fr; }
   .rule-row { grid-template-columns: 55px 1fr; }
