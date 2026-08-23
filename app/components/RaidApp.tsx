@@ -174,7 +174,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
   async function addRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setRuleStatus("Saving rule…");
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const nextRule: MechanicRule = {
       id: `rule-${crypto.randomUUID()}`, bossId, spellId: Number(form.get("spellId")), name: String(form.get("name") ?? ""),
       category: String(form.get("category")) as MechanicRule["category"], severity: String(form.get("severity")) as MechanicRule["severity"],
@@ -186,7 +187,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextRule) });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Rule could not be saved.");
-      setRules((current) => [nextRule, ...current]); setRuleStatus(`${nextRule.name} is saved. Recalculate saved pulls when the rule set is ready.`); event.currentTarget.reset();
+      setRules((current) => [nextRule, ...current]); setRuleStatus(`${nextRule.name} is saved. Recalculate saved pulls when the rule set is ready.`); formElement.reset();
     } catch (error) { setRuleStatus(error instanceof Error ? error.message : "Rule could not be saved."); }
     finally { setBusy(false); }
   }
