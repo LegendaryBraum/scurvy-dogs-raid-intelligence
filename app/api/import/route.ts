@@ -18,6 +18,8 @@ type ImportPayload = {
   raidNight?: string;
   action?: "preview" | "import";
   selections?: Array<{ code: string; fightIds: number[] }>;
+  raidNightId?: string;
+  replaceReportCodes?: string[];
 };
 
 function roleFromSpec(spec: string) {
@@ -54,7 +56,7 @@ function parseJson<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
-async function removeDemoReport(db: D1Database, reportId: string) {
+async function removeStoredReport(db: D1Database, reportId: string) {
   await db.batch([
     db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
@@ -95,10 +97,15 @@ export async function POST(request: Request) {
     const seasonName = payload.season?.trim() || "Current season";
     const seasonId = await stableId("season", seasonName);
     const results: Array<Record<string, unknown>> = [];
-    let raidNightId: string | null = null;
+    let raidNightId: string | null = payload.raidNightId?.trim() || null;
+    const replacementCodes = new Set(payload.replaceReportCodes ?? []);
 
     await db.prepare("INSERT INTO seasons (id, name, active) VALUES (?, ?, 1) ON CONFLICT(id) DO UPDATE SET name = excluded.name, active = 1")
       .bind(seasonId, seasonName).run();
+    if (raidNightId) {
+      const targetNight = await db.prepare("SELECT id FROM raid_nights WHERE id = ? AND season_id = ?").bind(raidNightId, seasonId).first<{ id: string }>();
+      if (!targetNight) return Response.json({ error: "That raid night is no longer available for another report." }, { status: 404 });
+    }
 
     for (const requested of parsed.reports) {
       const selectedFightIds = selectionByCode.get(requested.code) ?? new Set<number>();
@@ -106,14 +113,17 @@ export async function POST(request: Request) {
         results.push({ code: requested.code, status: "skipped", pulls: 0, bosses: 0 });
         continue;
       }
-      const existing = await db.prepare("SELECT id, source_mode FROM reports WHERE code = ?").bind(requested.code).first<{ id: string; source_mode: string }>();
-      if (existing?.source_mode === "live") {
+      const existing = await db.prepare("SELECT id, source_mode, raid_night_id FROM reports WHERE code = ?").bind(requested.code).first<{ id: string; source_mode: string; raid_night_id: string }>();
+      if (existing?.source_mode === "live" && !replacementCodes.has(requested.code)) {
         results.push({ code: requested.code, status: "already_imported", sourceMode: "live" });
         continue;
       }
-      if (existing) await removeDemoReport(db, existing.id);
 
       const { report: overview, token } = await fetchReportOverview(requested.code, credentials);
+      if (existing) {
+        raidNightId ??= existing.raid_night_id;
+        await removeStoredReport(db, existing.id);
+      }
       const rankedRows = parseRankingRows(overview.rankings);
       const actors = overview.masterData?.actors ?? [];
       const abilities = new Map((overview.masterData?.abilities ?? []).map((ability) => [ability.gameID, { name: ability.name, icon: ability.icon }]));
@@ -140,7 +150,7 @@ export async function POST(request: Request) {
       if (!raidNightId) {
         raidNightId = makeId("night");
         const happenedAt = new Date(overview.startTime).toISOString();
-        const defaultNight = `Raid night · ${new Date(overview.startTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+        const defaultNight = new Date(overview.startTime).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" });
         await db.prepare("INSERT INTO raid_nights (id, season_id, name, happened_at) VALUES (?, ?, ?, ?)")
           .bind(raidNightId, seasonId, payload.raidNight?.trim() || defaultNight, happenedAt).run();
       }
@@ -180,6 +190,7 @@ export async function POST(request: Request) {
           await db.batch([
             db.prepare("INSERT INTO players (id, name, realm, class_name, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name, realm) DO UPDATE SET class_name = excluded.class_name, role = excluded.role")
               .bind(playerId, actor.name, realm, actor.subType, role),
+            db.prepare("INSERT INTO player_identities (player_id, identity_id) VALUES (?, ?) ON CONFLICT(player_id) DO NOTHING").bind(playerId, playerId),
             db.prepare("INSERT INTO pull_players (id, pull_id, player_id, spec, dps, hps, parse, ilvl_parse, mechanics_score, performance_score, attendance_score, preparation_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 100, ?, 100, 0)")
               .bind(`${pullId}_${playerId}`, pullId, playerId, spec, role === "Healer" ? 0 : amount, role === "Healer" ? amount : 0, parse, ilvlParse, performanceScore),
           ]);

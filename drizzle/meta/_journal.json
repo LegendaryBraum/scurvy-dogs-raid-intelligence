@@ -29,6 +29,13 @@
       "when": 1787517501200,
       "tag": "0003_cultured_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787519666387,
+      "tag": "0004_special_menace",
+      "breakpoints": true
     }
   ]
 }

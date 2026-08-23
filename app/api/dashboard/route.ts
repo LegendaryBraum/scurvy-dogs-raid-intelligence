@@ -2,9 +2,10 @@ import { loadLatestDashboardData } from "../../../lib/dashboard-data";
 
 export const runtime = "edge";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const data = await loadLatestDashboardData();
+    const raidNightId = new URL(request.url).searchParams.get("raidNightId");
+    const data = await loadLatestDashboardData(raidNightId);
     if (!data) return Response.json({ error: "No live report has been imported yet." }, { status: 404 });
     return Response.json({ data });
   } catch (error) {

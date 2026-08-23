@@ -154,6 +154,8 @@ const performanceAverage = Math.round(players.reduce((sum, player) => sum + (pla
 export const raidData: DashboardData = {
   season: "Midnight · Season 1",
   raidNight: "Friday Progression · Aug 21, 2026",
+  raidNightId: "night-aug-21-2026",
+  raidNights: [{ id: "night-aug-21-2026", name: "Friday Progression · Aug 21, 2026", happenedAt: "2026-08-21T00:00:00.000Z" }],
   reportCode: "YtD1kgCwLv4cJT7n",
   raid: "The Venomous Abyss",
   bosses: [{ id: BOSS_ID, name: "Nek'zali the Soulcoiler" }],
@@ -161,7 +163,7 @@ export const raidData: DashboardData = {
   players,
   events,
   rules,
-  moduleSettings: { mechanics: true, performance: true, attendance: false, preparation: false },
+  moduleSettings: { mechanics: true, performance: true, attendance: true, preparation: false },
   raidAverages: { mechanics: RAID_MECHANICS_AVERAGE, performance: performanceAverage, attendance: 100, preparation: null },
   dataSource: {
     label: "Real raid snapshot",

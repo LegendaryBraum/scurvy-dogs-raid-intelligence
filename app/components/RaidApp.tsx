@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { DashboardData, MechanicRule, ModuleSettings, RaidEvent, RosterMember, ScoreKey } from "../../lib/types";
+import type { DashboardData, MechanicRule, ModuleSettings, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
 type ImportFight = { id: number; name: string; pullNumber: number; difficulty: string; duration: string; result: string; playerCount: number };
@@ -11,11 +11,11 @@ type ImportGroup = { id: string; label: string; description: string; kind: "raid
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
-const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: false, preparation: false };
+const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
 const moduleDescriptions: Record<ScoreKey, string> = {
   mechanics: "Encounter rules, timeline findings, mechanic scores, and trends.",
   performance: "Warcraft Logs damage or healing parses with item-level context.",
-  attendance: "Paused while raider identities and alternate characters are designed properly.",
+  attendance: "Raid-night attendance grouped by raider identity, including linked alternate characters.",
   preparation: "Flasks, food, enchants, gems, and potion checks when the season is ready for them.",
 };
 
@@ -35,6 +35,24 @@ function RosterManager({ members, busy, status, onToggle }: { members: RosterMem
 function ModuleManager({ settings, busy, status, onToggle }: { settings: ModuleSettings; busy: boolean; status: string; onToggle: (key: ScoreKey) => void }) {
   const activeCount = scoreKeys.filter((key) => settings[key]).length;
   return <article className="panel module-manager"><div className="module-manager-heading"><div><p className="eyebrow muted"><span /> Score modules</p><h2>Use only what matters right now</h2><p>Pause any module without deleting its data. Turning it back on restores it across player dashboards, officer comparisons, and private reports.</p></div><div className="module-count"><strong>{activeCount}</strong><small>Active</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="module-list">{scoreKeys.map((key) => <div className={`module-row ${settings[key] ? "" : "module-row-paused"}`} key={key}><div><strong>{scoreLabels[key]}</strong><p>{moduleDescriptions[key]}</p></div><span className={`module-state ${settings[key] ? "active" : "paused"}`}>{settings[key] ? "Active" : "Paused"}</span><button aria-pressed={settings[key]} disabled={busy} onClick={() => onToggle(key)} type="button">{settings[key] ? "Pause module" : "Turn on"}</button></div>)}</div></article>;
+}
+
+function RaidNightManager({ raidNights, busy, status, onToggle, onDelete, onReplace, onAdd }: { raidNights: RaidNightRecord[]; busy: boolean; status: string; onToggle: (target: "raid_night" | "report", id: string, included: boolean) => void; onDelete: (target: "raid_night" | "report", id: string, label: string) => void; onReplace: (report: RaidReportRecord) => void; onAdd: (night: RaidNightRecord) => void }) {
+  const active = raidNights.filter((night) => night.included).length;
+  return <article className="panel run-manager"><div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raid nights & reports</p><h2>Keep the season history clean</h2><p>Exclude mistakes without deleting them, combine restarted logs under one night, or replace an existing report after reviewing its pulls.</p></div><div className="module-count"><strong>{active}</strong><small>Active nights</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="raid-night-list">{raidNights.map((night) => <section className={`raid-night-card ${night.included ? "" : "run-archived"}`} key={night.id}><div className="raid-night-heading"><div><span className="run-date">{new Date(night.happenedAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span><strong>{night.name}</strong><small>{night.reportCount} report{night.reportCount === 1 ? "" : "s"} · {night.pullCount} pulls</small></div><span className={`run-state ${night.included ? "active" : "archived"}`}>{night.included ? "Active" : "Excluded"}</span><div className="run-actions"><button disabled={busy} onClick={() => onAdd(night)} type="button">Add report</button><button disabled={busy} onClick={() => onToggle("raid_night", night.id, !night.included)} type="button">{night.included ? "Exclude night" : "Restore night"}</button><button className="danger-text" disabled={busy} onClick={() => onDelete("raid_night", night.id, night.name)} type="button">Delete</button></div></div><div className="saved-report-list">{night.reports.map((report) => <div className={report.included ? "" : "run-archived"} key={report.id}><div><strong>{report.title}</strong><small>{report.zoneName} · {report.pullCount} pulls · {report.bossCount} bosses · {report.playerCount} players</small><a href={report.url} rel="noreferrer" target="_blank">{report.code}</a></div><span className={`run-state ${report.included ? "active" : "archived"}`}>{report.included ? "Included" : "Excluded"}</span><div className="run-actions"><button disabled={busy} onClick={() => onReplace(report)} type="button">Replace / reimport</button><button disabled={busy || !night.included} onClick={() => onToggle("report", report.id, !report.included)} type="button">{report.included ? "Exclude" : "Restore"}</button><button className="danger-text" disabled={busy} onClick={() => onDelete("report", report.id, report.title)} type="button">Delete</button></div></div>)}</div></section>)}{raidNights.length === 0 && <p className="detail-empty">No imported raid nights are available yet.</p>}</div></article>;
+}
+
+function IdentityManager({ members, busy, status, onLink }: { members: RosterMember[]; busy: boolean; status: string; onLink: (playerId: string, identityId: string) => void }) {
+  const activeMembers = members.filter((member) => member.included);
+  return <article className="panel identity-manager"><div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raider identities</p><h2>Link mains and alternate characters</h2><p>Attendance follows the person. Choose another active character only when both names belong to the same raider.</p></div><div className="module-count"><strong>{new Set(activeMembers.map((member) => member.identityId ?? member.id)).size}</strong><small>Raiders</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="identity-list">{activeMembers.map((member) => { const identity = members.find((candidate) => candidate.id === (member.identityId ?? member.id)); return <label key={member.id}><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><span><strong>{member.name}</strong><small>{member.spec} {member.className}{identity && identity.id !== member.id ? ` · linked with ${identity.name}` : " · own attendance"}</small></span><select disabled={busy} value={member.identityId ?? member.id} onChange={(event) => onLink(member.id, event.target.value)}><option value={member.id}>Keep separate</option>{activeMembers.filter((candidate) => candidate.id !== member.id).map((candidate) => <option value={candidate.identityId ?? candidate.id} key={candidate.id}>Same raider as {candidate.name}</option>)}</select></label>; })}</div></article>;
+}
+
+function PlayerHistory({ history, linkedCharacters, activeKeys, loading, player }: { history: PlayerHistoryPoint[]; linkedCharacters: string[]; activeKeys: ScoreKey[]; loading: boolean; player: PlayerSnapshot }) {
+  if (loading) return <section className="panel history-empty"><strong>Building {player.name}&apos;s season history…</strong></section>;
+  if (!history.length) return <section className="panel history-empty"><strong>No raid-night history yet</strong><p>Import another night to start the week-over-week view.</p></section>;
+  const latest = history.at(-1)!;
+  const compact = (value: number | null) => value === null ? "—" : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}m` : value >= 1_000 ? `${Math.round(value / 1_000)}k` : String(value);
+  return <section className="history-view"><article className="panel history-hero"><div><p className="eyebrow"><span /> Season history</p><h2>{history.length === 1 ? "Your first weekly baseline" : `${history.length} raid nights, one clear direction`}</h2><p>{linkedCharacters.length > 1 ? `Attendance combines ${linkedCharacters.join(" and ")}. ` : ""}Scores are rolled up by raid night; raw output stays visible without mixing it into Mechanics.</p></div><div className="history-latest"><small>Latest night</small><strong>{latest.present ? "Present" : "Absent"}</strong><span>{latest.pulls} pull{latest.pulls === 1 ? "" : "s"}</span></div></article><div className="history-score-grid">{activeKeys.map((key) => <article className="panel history-metric" key={key}><div><span>{scoreLabels[key]}</span><strong>{latest.scores[key] ?? "—"}</strong></div><div className="history-bars" aria-label={`${scoreLabels[key]} by raid night`}>{history.map((point) => <span key={point.raidNightId}><i style={{ height: `${point.scores[key] ?? 4}%` }} /><b>{point.scores[key] ?? "—"}</b><small>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</small></span>)}</div></article>)}</div><article className="panel history-table"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Night-by-night</p><h2>Progress without the guesswork</h2></div><span className="confidence">Identity-aware</span></div><div className="table-scroll"><table><thead><tr><th>Raid night</th><th>Present</th><th>Pulls</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>{player.role === "Healer" ? "Avg HPS" : "Avg DPS"}</th></tr></thead><tbody>{[...history].reverse().map((point) => <tr key={point.raidNightId}><td><strong>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{point.label}</small></td><td><span className={`review-chip ${point.present ? "clear" : "attention"}`}>{point.present ? "Yes" : "No"}</span></td><td>{point.pulls}</td><td>{point.scores.mechanics ?? "—"}</td><td>{point.scores.performance ?? "—"}</td><td>{point.scores.attendance ?? "—"}</td><td>{compact(player.role === "Healer" ? point.hps : point.dps)}</td></tr>)}</tbody></table></div><p className="history-note">Compare DPS or HPS on the same boss and spec when judging output. Performance percentiles are the safer overall cross-boss trend.</p></article></section>;
 }
 
 function scoringMode(rule: MechanicRule) {
@@ -71,6 +89,7 @@ function EventSpell({ event, fallbackIcon }: { event: RaidEvent; fallbackIcon?: 
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
   const [initialData, setInitialData] = useState(fallbackData);
   const [view, setView] = useState<View>("player");
+  const [playerTab, setPlayerTab] = useState<"review" | "history">("review");
   const [activeScore, setActiveScore] = useState<ScoreKey | null>(null);
   const [playerId, setPlayerId] = useState(initialData.players[0].id);
   const [bossId, setBossId] = useState(initialData.bosses[0].id);
@@ -82,21 +101,30 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
   const [importSelections, setImportSelections] = useState<Record<string, number[]>>({});
   const [importStatus, setImportStatus] = useState("");
+  const [importRaidNightId, setImportRaidNightId] = useState<string | null>(null);
+  const [replaceReportCodes, setReplaceReportCodes] = useState<string[]>([]);
   const [shareStatus, setShareStatus] = useState("");
   const [ruleStatus, setRuleStatus] = useState("");
   const [moduleStatus, setModuleStatus] = useState("");
   const [rosterStatus, setRosterStatus] = useState("");
+  const [runStatus, setRunStatus] = useState("");
+  const [identityStatus, setIdentityStatus] = useState("");
+  const [runNights, setRunNights] = useState<RaidNightRecord[]>([]);
+  const [history, setHistory] = useState<PlayerHistoryPoint[]>([]);
+  const [linkedCharacters, setLinkedCharacters] = useState<string[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const requestedIconSets = useRef(new Set<string>());
 
   function applyDashboard(nextData: DashboardData) {
     const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
     const nextPullId = nextData.pulls.some((candidate) => candidate.id === pullId) ? pullId : nextData.pulls.find((candidate) => candidate.bossId === nextBossId)?.id ?? nextData.pulls[0].id;
-    const nextPlayers = nextData.pullPlayers?.[nextPullId] ?? nextData.players;
+    const nextRoster = nextData.roster ?? [];
     setInitialData(nextData);
     setBossId(nextBossId);
     setPullId(nextPullId);
-    setPlayerId(nextPlayers.some((candidate) => candidate.id === playerId) ? playerId : nextPlayers[0].id);
+    setPlayerId(nextRoster.some((candidate) => candidate.id === playerId) ? playerId : nextRoster.find((candidate) => candidate.included)?.id ?? nextData.players[0].id);
     setRules(nextData.rules);
   }
 
@@ -115,6 +143,29 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       .catch(() => undefined);
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/runs")
+      .then(async (response) => response.ok ? response.json() as Promise<{ raidNights: RaidNightRecord[] }> : null)
+      .then((result) => { if (active && result?.raidNights) setRunNights(result.raidNights); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/history?playerId=${encodeURIComponent(playerId)}`)
+      .then(async (response) => response.ok ? response.json() as Promise<{ history: PlayerHistoryPoint[]; linkedCharacters: string[] }> : null)
+      .then((result) => {
+        if (!active) return;
+        setHistory(result?.history ?? []);
+        setLinkedCharacters(result?.linkedCharacters ?? []);
+      })
+      .catch(() => { if (active) { setHistory([]); setLinkedCharacters([]); } })
+      .finally(() => { if (active) setHistoryLoading(false); });
+    return () => { active = false; };
+  }, [historyRevision, playerId]);
 
   useEffect(() => {
     const allEvents = [...initialData.events, ...Object.values(initialData.pullEvents ?? {}).flat()];
@@ -157,19 +208,29 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const activeScoreKeys = scoreKeys.filter((key) => moduleSettings[key]);
   const activeRules = rules.filter((rule) => rule.enabled !== false);
   const rosterMembers = initialData.roster ?? initialData.players.map((candidate) => ({ id: candidate.id, name: candidate.name, realm: candidate.realm, className: candidate.className, spec: candidate.spec, role: candidate.role, pullsSeen: initialData.pulls.length, raidNights: 1, lastSeen: null, included: true }));
-  const player = activePlayers.find((candidate) => candidate.id === playerId) ?? activePlayers[0] ?? initialData.players[0];
+  const rosterPlayer = rosterMembers.find((candidate) => candidate.id === playerId) ?? rosterMembers.find((candidate) => candidate.included) ?? rosterMembers[0];
+  const presentPlayer = activePlayers.find((candidate) => candidate.id === playerId);
+  const playerPresent = Boolean(presentPlayer);
+  const player: PlayerSnapshot = presentPlayer ?? {
+    id: rosterPlayer.id, name: rosterPlayer.name, realm: rosterPlayer.realm, className: rosterPlayer.className, spec: rosterPlayer.spec, role: rosterPlayer.role,
+    scores: { mechanics: null, performance: null, attendance: rosterPlayer.attendanceScore ?? 0, preparation: null }, parse: null, ilvlParse: null,
+    attendanceLabel: `${rosterPlayer.attendanceScore ?? 0}% season attendance`, prepLabel: "Not evaluated", trend: [],
+    summary: `No imported pull data for ${rosterPlayer.name} on this selected raid night and pull. Attendance still records the absence accurately.`,
+    wins: ["Season history remains available across linked characters"], focus: ["Choose another raid night or pull to review combat details"],
+    deaths: 0, interrupts: 0, dispels: 0, avoidableDamage: 0,
+  };
   const activeEvents = initialData.pullEvents?.[pull?.id ?? pullId] ?? initialData.events;
   const playerEvents = activeEvents.filter((event) => event.playerId === player.id);
   const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
   const mechanicsScore = moduleSettings.mechanics ? player.scores.mechanics : null;
   const matchedRules = activeRules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
   const rulesBySpellId = new Map(activeRules.map((rule) => [rule.spellId, rule]));
-  const heroSummary = moduleSettings.mechanics
+  const heroSummary = !playerPresent ? player.summary : moduleSettings.mechanics
     ? player.summary
     : moduleSettings.performance
       ? `${player.parse === null ? "This pull has no ranked Warcraft Logs parse." : `Warcraft Logs shows a ${player.parse}th percentile ${player.role === "Healer" ? "healing" : "damage"} parse.`} Mechanics is currently paused.`
       : "The scoring modules for this view are currently paused. Your imported pull data is still safely stored.";
-  const heroHeading = moduleSettings.mechanics
+  const heroHeading = !playerPresent ? "No pull data" : moduleSettings.mechanics
     ? mechanicsScore === null ? "Ready for calibration" : mechanicsScore >= 90 ? "Good pull" : mechanicsScore >= 80 ? "Solid pull" : "Clear next step"
     : moduleSettings.performance ? "Performance checkpoint" : "Modules paused";
   const comparisonSortKey = moduleSettings.mechanics ? "mechanics" : activeScoreKeys[0];
@@ -185,6 +246,80 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   function chooseBoss(nextBoss: string) {
     setBossId(nextBoss);
     setPullId(initialData.pulls.find((candidate) => candidate.bossId === nextBoss)?.id ?? initialData.pulls[0].id);
+  }
+
+  async function chooseRaidNight(nextRaidNightId: string) {
+    setBusy(true); setActiveScore(null); setRunStatus("Loading that raid night…");
+    try {
+      const response = await fetch(`/api/dashboard?raidNightId=${encodeURIComponent(nextRaidNightId)}`);
+      const result = await response.json() as { data?: DashboardData; error?: string };
+      if (!response.ok || !result.data) throw new Error(result.error ?? "That raid night could not be loaded.");
+      applyDashboard(result.data);
+      setRunStatus("");
+    } catch (error) { setRunStatus(error instanceof Error ? error.message : "That raid night could not be loaded."); }
+    finally { setBusy(false); }
+  }
+
+  function openNewImport() {
+    setImportRaidNightId(null); setReplaceReportCodes([]); setReportUrls(""); resetImportReview(); setImportOpen(true);
+  }
+
+  function addReportToNight(night: RaidNightRecord) {
+    setImportRaidNightId(night.id); setReplaceReportCodes([]); setReportUrls(""); resetImportReview(); setImportStatus(`The selected report will be added to ${night.name}.`); setImportOpen(true);
+  }
+
+  function replaceReport(report: RaidReportRecord) {
+    const night = runNights.find((candidate) => candidate.reports.some((stored) => stored.id === report.id));
+    setImportRaidNightId(night?.id ?? null); setReplaceReportCodes([report.code]); setReportUrls(report.url); resetImportReview(); setImportStatus(`Review the pulls, then replace the saved copy of ${report.title}.`); setImportOpen(true);
+  }
+
+  async function updateRun(target: "raid_night" | "report", id: string, included: boolean) {
+    setBusy(true); setRunStatus(`${included ? "Restoring" : "Excluding"} saved raid data…`);
+    try {
+      const response = await fetch("/api/runs", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, id, included }) });
+      const result = await response.json() as { error?: string; raidNights?: RaidNightRecord[] };
+      if (!response.ok) throw new Error(result.error ?? "The saved run could not be updated.");
+      setRunNights(result.raidNights ?? []);
+      const dashboardResponse = await fetch("/api/dashboard");
+      const dashboardResult = await dashboardResponse.json() as { data?: DashboardData; error?: string };
+      if (dashboardResponse.ok && dashboardResult.data) applyDashboard(dashboardResult.data);
+      setHistoryRevision((current) => current + 1);
+      setRunStatus(included ? "The saved data is active again." : "The saved data is excluded from dashboards, history, averages, and attendance. You can restore it here.");
+    } catch (error) { setRunStatus(error instanceof Error ? error.message : "The saved run could not be updated."); }
+    finally { setBusy(false); }
+  }
+
+  async function deleteRun(target: "raid_night" | "report", id: string, label: string) {
+    if (!window.confirm(`Permanently delete ${label}? This cannot be undone. Exclude it instead if you may need it later.`)) return;
+    setBusy(true); setRunStatus(`Permanently deleting ${label}…`);
+    try {
+      const response = await fetch("/api/runs", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, id }) });
+      const result = await response.json() as { error?: string; raidNights?: RaidNightRecord[] };
+      if (!response.ok) throw new Error(result.error ?? "The saved run could not be deleted.");
+      setRunNights(result.raidNights ?? []);
+      const dashboardResponse = await fetch("/api/dashboard");
+      const dashboardResult = await dashboardResponse.json() as { data?: DashboardData };
+      if (dashboardResponse.ok && dashboardResult.data) applyDashboard(dashboardResult.data);
+      setHistoryRevision((current) => current + 1);
+      setRunStatus(`${label} was permanently deleted.`);
+    } catch (error) { setRunStatus(error instanceof Error ? error.message : "The saved run could not be deleted."); }
+    finally { setBusy(false); }
+  }
+
+  async function linkIdentity(characterId: string, identityId: string) {
+    const character = rosterMembers.find((member) => member.id === characterId);
+    setBusy(true); setIdentityStatus(`Updating ${character?.name ?? "character"}…`);
+    try {
+      const response = await fetch("/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId: characterId, identityId }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "The character link could not be saved.");
+      const dashboardResponse = await fetch(`/api/dashboard${initialData.raidNightId ? `?raidNightId=${encodeURIComponent(initialData.raidNightId)}` : ""}`);
+      const dashboardResult = await dashboardResponse.json() as { data?: DashboardData; error?: string };
+      if (!dashboardResponse.ok || !dashboardResult.data) throw new Error(dashboardResult.error ?? "The updated roster could not be loaded.");
+      applyDashboard(dashboardResult.data); setHistoryRevision((current) => current + 1);
+      setIdentityStatus("Character link saved. Attendance and History now treat those characters as one raider.");
+    } catch (error) { setIdentityStatus(error instanceof Error ? error.message : "The character link could not be saved."); }
+    finally { setBusy(false); }
   }
 
   async function previewReports(event: FormEvent) {
@@ -206,7 +341,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     if (!selections.some((selection) => selection.fightIds.length)) { setImportStatus("Select at least one pull to import."); return; }
     setBusy(true); setImportStatus("Importing only the selected pulls and applying active rules…");
     try {
-      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season, selections }) });
+      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season, selections, raidNightId: importRaidNightId, replaceReportCodes }) });
       const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[] };
       if (!response.ok) throw new Error(result.error ?? "Import failed.");
       const stored = result.reports ?? [];
@@ -357,20 +492,24 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <button className={view === "officer" ? "active" : ""} type="button" onClick={() => setView("officer")}>Officer view</button>
           <button className={view === "configure" ? "active" : ""} type="button" onClick={() => setView("configure")}>Configure</button>
         </nav>
-        <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={() => setImportOpen(true)}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
+        <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={openNewImport}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
       </header>
 
       {view === "player" && <section className="dashboard" id="dashboard">
-        <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy} onClick={createShare} type="button">Share private view</button></div>
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy || !playerPresent} onClick={createShare} type="button">Share private view</button></div>
         <div className="hero-row"><div><h1>{heroHeading}, {player.name}.</h1><p>{heroSummary}</p></div><div className="context-chip"><span>{pull?.difficulty}</span><strong>{pull?.duration}</strong><small>{pull?.killed ? "Kill" : "Wipe"}</small></div></div>
         {initialData.dataSource && <div className="status-line data-source-line"><span /><a href={initialData.dataSource.reportUrl} target="_blank" rel="noreferrer">{initialData.dataSource.detail}</a>{initialData.dataSource.wipefestUrl && <a href={initialData.dataSource.wipefestUrl} target="_blank" rel="noreferrer">Open Wipefest</a>}</div>}
         {shareStatus && <div className="status-line" role="status"><span />{shareStatus}</div>}
+        {runStatus && <div className="status-line" role="status"><span />{runStatus}</div>}
         <div className="filters" aria-label="Dashboard filters">
-          <label>Player<select value={player.id} onChange={(event) => setPlayerId(event.target.value)}>{activePlayers.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
+          <label>Player<select value={player.id} onChange={(event) => { setHistoryLoading(true); setPlayerId(event.target.value); }}>{rosterMembers.filter((candidate) => candidate.included).map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
+          <label>Raid night<select disabled={busy} value={initialData.raidNightId ?? ""} onChange={(event) => chooseRaidNight(event.target.value)}>{(initialData.raidNights ?? [{ id: initialData.raidNightId ?? "", name: initialData.raidNight, happenedAt: "" }]).map((night) => <option value={night.id} key={night.id}>{night.name}</option>)}</select></label>
           <label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
           <p><span className="live-dot" /> {boss.name} · {activeRules.filter((rule) => rule.bossId === boss.id).length} active rules · {pullOptions.length} pulls</p>
         </div>
+        <div className="player-tabs" role="tablist" aria-label="Player dashboard sections"><button aria-selected={playerTab === "review"} className={playerTab === "review" ? "active" : ""} onClick={() => setPlayerTab("review")} role="tab" type="button">Raid review</button><button aria-selected={playerTab === "history"} className={playerTab === "history" ? "active" : ""} onClick={() => { setPlayerTab("history"); setActiveScore(null); }} role="tab" type="button">History</button></div>
+        {playerTab === "review" && <>
         <section className={`score-grid score-grid-${activeScoreKeys.length}`} aria-label="Player scores">
           {activeScoreKeys.map((key) => {
             const index = scoreKeys.indexOf(key);
@@ -392,13 +531,13 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           {activeScoreKeys.length === 0 && <article className="module-empty"><strong>All score modules are paused</strong><p>Imported pull data is still stored. Turn on a module from Configure whenever you are ready to use it.</p></article>}
         </section>
         {activeScore && <section aria-live="polite" className={`panel score-detail-panel detail-${activeScore}`} id="score-detail-panel">
-          <div className="score-detail-heading"><div><p className="eyebrow"><span /> {scoreLabels[activeScore]} detail</p><h2>{activeScore === "mechanics" ? "What changed the mechanic score" : activeScore === "performance" ? "How the performance score was built" : activeScore === "attendance" ? "What attendance currently covers" : "What preparation data is available"}</h2><p>{activeScore === "mechanics" ? "Actual Wipefest scoring, timeline events, and the matching encounter rules for this player." : activeScore === "performance" ? `Warcraft Logs ${player.role === "Healer" ? "healing" : "damage"} parses from this exact pull, shown with item-level context.` : activeScore === "attendance" ? "This is the first tracked raid night, so attendance is factual but not yet a meaningful trend." : "Wipefest exposed raid-level preparation, but not a trustworthy individual breakdown on the public report."}</p></div><button aria-label="Close score details" onClick={() => setActiveScore(null)} type="button">×</button></div>
+          <div className="score-detail-heading"><div><p className="eyebrow"><span /> {scoreLabels[activeScore]} detail</p><h2>{activeScore === "mechanics" ? "What changed the mechanic score" : activeScore === "performance" ? "How the performance score was built" : activeScore === "attendance" ? "What attendance currently covers" : "What preparation data is available"}</h2><p>{activeScore === "mechanics" ? "Actual Wipefest scoring, timeline events, and the matching encounter rules for this player." : activeScore === "performance" ? `Warcraft Logs ${player.role === "Healer" ? "healing" : "damage"} parses from this exact pull, shown with item-level context.` : activeScore === "attendance" ? "Attendance counts included raid nights once and combines any alternate characters linked to this raider." : "Wipefest exposed raid-level preparation, but not a trustworthy individual breakdown on the public report."}</p></div><button aria-label="Close score details" onClick={() => setActiveScore(null)} type="button">×</button></div>
           {activeScore === "mechanics" && <>
             <div className="score-detail-stats"><span><small>Player score</small><strong>{player.scores.mechanics ?? "N/A"}</strong><em>{initialData.dataSource?.label === "Live Warcraft Logs import" ? "Configured rules" : "Wipefest"}</em></span><span><small>Raid average</small><strong>{officerSummary.mechanics ?? "N/A"}</strong><em>{activePlayers.length} players</em></span><span><small>Timeline findings</small><strong>{playerEvents.length}</strong><em>{findings} need review</em></span><span><small>Matched rules</small><strong>{matchedRules.length}</strong><em>Spell-ID based</em></span></div>
             <div className="score-detail-columns"><div><h3>Events from this pull</h3><ul className="events detail-event-list">{playerEvents.map((event) => <li key={`detail-${event.id}`}><EventSpell event={event} fallbackIcon={rulesBySpellId.get(event.spellId)?.icon} /><div><a className="event-ability-link" href={spellReferenceUrl(event.spellId)} rel="noreferrer" target="_blank">{event.ability}</a><small>{event.detail}</small></div><time>{event.timestamp}</time></li>)}</ul></div><div><h3>Rules that matched</h3><div className="detail-rule-list">{matchedRules.map((rule) => <div key={`detail-${rule.id}`}><SpellIcon icon={rule.icon} name={rule.name} spellId={rule.spellId} /><p><strong>{rule.name}</strong><small><a href={spellReferenceUrl(rule.spellId)} rel="noreferrer" target="_blank">Spell {rule.spellId}</a> · weight {rule.weight}</small></p><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span></div>)}{matchedRules.length === 0 && <p className="detail-empty">No configured rule matched this player&apos;s displayed timeline events.</p>}</div></div></div>
           </>}
           {activeScore === "performance" && <><div className="score-detail-stats"><span><small>WCL parse</small><strong>{player.parse ?? "N/A"}</strong><em>{player.role === "Healer" ? "Healing" : "Damage"}</em></span><span><small>Item-level parse</small><strong>{player.ilvlParse ?? "N/A"}</strong><em>Item level {player.itemLevel ?? "—"}</em></span><span><small>Performance</small><strong>{player.scores.performance ?? "N/A"}</strong><em>Transparent blend</em></span><span><small>Active pull</small><strong>{pull?.duration}</strong><em>{pull?.label}</em></span></div><div className="detail-explanation"><strong>The current formula</strong><p>Performance = 65% Warcraft Logs parse + 35% item-level parse. It keeps raw output visible while adding context for the gear available to the player. This score does not affect Mechanics, Attendance, or Preparation.</p></div></>}
-          {activeScore === "attendance" && <><div className="score-detail-stats"><span><small>Tracked nights</small><strong>1/1</strong><em>{initialData.raidNight}</em></span><span><small>Pull presence</small><strong>Yes</strong><em>Selected pull</em></span><span><small>Attendance</small><strong>{player.scores.attendance ?? "N/A"}</strong><em>First baseline</em></span><span><small>Trend confidence</small><strong>Low</strong><em>More nights needed</em></span></div><div className="detail-explanation"><strong>Why this is 100 today</strong><p>{player.name} was present for this imported raid night. This becomes a meaningful percentage after additional scheduled nights are imported.</p></div></>}
+          {activeScore === "attendance" && <><div className="score-detail-stats"><span><small>Tracked nights</small><strong>{history.filter((point) => point.present).length}/{history.length || 1}</strong><em>Included raid nights</em></span><span><small>Selected night</small><strong>{playerPresent ? "Present" : "Absent"}</strong><em>{initialData.raidNight}</em></span><span><small>Attendance</small><strong>{player.scores.attendance ?? "N/A"}</strong><em>Identity-aware</em></span><span><small>Linked characters</small><strong>{Math.max(1, linkedCharacters.length)}</strong><em>{linkedCharacters.join(", ") || player.name}</em></span></div><div className="detail-explanation"><strong>How it is counted</strong><p>Each included raid night counts once, even when it contains multiple Warcraft Logs reports. Any linked main or alternate character marks the same raider present.</p></div></>}
           {activeScore === "preparation" && <><div className="score-detail-stats"><span><small>Individual score</small><strong>{player.scores.preparation ?? "N/A"}</strong><em>Not assumed</em></span><span><small>Raid flasks</small><strong>{initialData.preparationRaid?.flasks ?? "N/A"}{initialData.preparationRaid?.flasks !== null && initialData.preparationRaid?.flasks !== undefined && initialData.preparationRaid.total ? `/${initialData.preparationRaid.total}` : ""}</strong><em>Available source</em></span><span><small>Raid food</small><strong>{initialData.preparationRaid?.food ?? "N/A"}{initialData.preparationRaid?.food !== null && initialData.preparationRaid?.food !== undefined && initialData.preparationRaid.total ? `/${initialData.preparationRaid.total}` : ""}</strong><em>Available source</em></span><span><small>Player penalty</small><strong>None</strong><em>No guessing</em></span></div><div className="detail-explanation"><strong>What we know</strong><p>{initialData.preparationSummary} The app intentionally leaves this player score blank rather than assigning incomplete raid data to an individual.</p></div></>}
         </section>}
         {moduleSettings.mechanics && <><section className="insight-grid">
@@ -409,10 +548,12 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <article className="panel trend-panel"><div><p className="eyebrow muted"><span /> Trend</p><h2>{player.trend.length > 1 ? `Mechanics are moving ${player.trend.at(-1)! >= player.trend[0] ? "up" : "down"}` : "First mechanics baseline"}</h2><p>{player.trend.length > 1 ? "Last six evaluated pulls" : "One calibrated pull · future raids will build the trend"}</p></div><div className="trend-bars" aria-label={`Mechanics trend: ${player.trend.join(", ")}`}>{player.trend.map((value, index) => <i key={`${value}-${index}`} style={{ height: `${value}%` }}><span>{value}</span></i>)}</div></article>
           <article className="panel stat-panel"><p className="eyebrow muted"><span /> Pull facts</p><h2>Evidence, not mystery</h2><div className="fact-grid"><span><strong>{player.deaths}</strong><small>Timeline deaths</small></span><span><strong>{player.avoidableDamage >= 1000000 ? `${(player.avoidableDamage / 1000000).toFixed(1)}m` : `${Math.round(player.avoidableDamage / 1000)}k`}</strong><small>Tracked avoidable</small></span><span><strong>{player.interrupts + player.dispels}</strong><small>Dispels / utility</small></span><span><strong>{player.itemLevel ?? "—"}</strong><small>Item level</small></span></div></article>
         </section></>}
+        </>}
+        {playerTab === "history" && <PlayerHistory activeKeys={activeScoreKeys} history={history} linkedCharacters={linkedCharacters} loading={historyLoading} player={player} />}
       </section>}
 
       {view === "officer" && <section className="dashboard officer-view" id="officer">
-        <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Add raid reports</button></div>
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={openNewImport}>Add raid reports</button></div>
         <div className="section-hero"><div><h1>See the whole roster, clearly.</h1><p>{activeScoreKeys.length} active independent signal{activeScoreKeys.length === 1 ? "" : "s"}. Paused modules stay out of comparisons until you turn them back on.</p></div><div className="hierarchy-note"><small>Current scope</small><strong>{initialData.season}</strong><span>Season → Night → Report → Boss → Pull → Player</span></div></div>
         <section className={`officer-summary officer-summary-${activeScoreKeys.length}`}>{activeScoreKeys.map((key) => {
           const value = officerSummary[key];
@@ -423,9 +564,11 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       </section>}
 
       {view === "configure" && <section className="dashboard config-view" id="configure">
-        <div className="eyebrow-row"><p className="eyebrow"><span /> Encounter configuration</p><button className="share-button" type="button" onClick={() => setImportOpen(true)}>Import reports</button></div>
+        <div className="eyebrow-row"><p className="eyebrow"><span /> Encounter configuration</p><button className="share-button" type="button" onClick={openNewImport}>Import reports</button></div>
         <div className="section-hero"><div><h1>Define what matters once.</h1><p>The engine stays the same. Each raid tier is maintained here as a set of readable, editable mechanic rules.</p></div><div className="engine-note"><span>Configuration</span><b>→</b><span>Analysis engine</span><b>→</b><span>Four scores</span></div></div>
+        <RaidNightManager raidNights={runNights} busy={busy} status={runStatus} onToggle={updateRun} onDelete={deleteRun} onReplace={replaceReport} onAdd={addReportToNight} />
         <ModuleManager settings={moduleSettings} busy={busy} status={moduleStatus} onToggle={toggleModule} />
+        <IdentityManager members={rosterMembers} busy={busy} status={identityStatus} onLink={linkIdentity} />
         <RosterManager members={rosterMembers} busy={busy} status={rosterStatus} onToggle={updateRoster} />
         <div className="config-filters"><label>Raid<select defaultValue={initialData.raid}><option>{initialData.raid}</option></select></label><label>Boss<select value={bossId} onChange={(event) => { chooseBoss(event.target.value); setEditingRule(null); }}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><div><span>Active rules</span><strong>{activeRules.filter((rule) => rule.bossId === bossId).length}</strong></div><button className="share-button" disabled={busy || !activeRules.some((rule) => rule.bossId === bossId)} onClick={reanalyzeBoss} type="button">Recalculate saved pulls</button></div>
         {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}

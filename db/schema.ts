@@ -13,12 +13,14 @@ export const raidNights = sqliteTable("raid_nights", {
   seasonId: text("season_id").notNull().references(() => seasons.id),
   name: text("name").notNull(),
   happenedAt: text("happened_at").notNull(),
+  included: integer("included", { mode: "boolean" }).notNull().default(true),
 }, (table) => [index("idx_raid_nights_season_date").on(table.seasonId, table.happenedAt)]);
 
 export const reports = sqliteTable("reports", {
   id: text("id").primaryKey(), raidNightId: text("raid_night_id").notNull().references(() => raidNights.id),
   code: text("code").notNull(), url: text("url").notNull(), title: text("title").notNull(), zoneName: text("zone_name"),
   startTime: integer("start_time"), endTime: integer("end_time"), sourceMode: text("source_mode").notNull().default("live"),
+  included: integer("included", { mode: "boolean" }).notNull().default(true),
   importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("idx_reports_code_unique").on(table.code), index("idx_reports_raid_night").on(table.raidNightId)]);
 
@@ -44,6 +46,12 @@ export const playerRosterSettings = sqliteTable("player_roster_settings", {
   included: integer("included", { mode: "boolean" }).notNull().default(true),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("idx_player_roster_settings_included").on(table.included)]);
+
+export const playerIdentities = sqliteTable("player_identities", {
+  playerId: text("player_id").primaryKey().references(() => players.id),
+  identityId: text("identity_id").notNull().references(() => players.id),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("idx_player_identities_identity").on(table.identityId)]);
 
 export const scoreModuleSettings = sqliteTable("score_module_settings", {
   moduleKey: text("module_key").primaryKey(),

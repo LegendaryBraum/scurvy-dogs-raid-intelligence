@@ -7,14 +7,16 @@ export async function getSharedPlayer(token: string): Promise<PlayerSnapshot | n
   try {
     const db = await ensureSchema();
     const row = await db.prepare(`
-      SELECT p.id, p.name, p.realm, p.class_name AS className, p.role, s.pull_id AS pullId, s.expires_at AS expiresAt
+      SELECT p.id, p.name, p.realm, p.class_name AS className, p.role, s.pull_id AS pullId, s.expires_at AS expiresAt, r.raid_night_id AS raidNightId
       FROM shares s
       JOIN players p ON p.id = s.player_id
+      LEFT JOIN pulls pu ON pu.id = s.pull_id
+      LEFT JOIN reports r ON r.id = pu.report_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
       WHERE s.token = ? AND COALESCE(prs.included, 1) = 1
-    `).bind(token).first<{ id: string; name: string; realm: string; className: string; role: string; pullId: string | null; expiresAt: string | null }>();
+    `).bind(token).first<{ id: string; name: string; realm: string; className: string; role: string; pullId: string | null; expiresAt: string | null; raidNightId: string | null }>();
     if (!row || (row.expiresAt && new Date(row.expiresAt).getTime() < Date.now())) return null;
-    const dashboard = await loadLatestDashboardData();
+    const dashboard = await loadLatestDashboardData(row.raidNightId);
     const imported = row.pullId ? dashboard?.pullPlayers?.[row.pullId]?.find((player) => player.id === row.id) : undefined;
     if (imported) {
       const comparisonPlayers = dashboard?.pullPlayers?.[row.pullId ?? ""] ?? [];

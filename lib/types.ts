@@ -38,6 +38,41 @@ export type RosterMember = {
   raidNights: number;
   lastSeen: number | null;
   included: boolean;
+  identityId?: string;
+  attendanceScore?: number;
+};
+
+export type RaidReportRecord = {
+  id: string;
+  code: string;
+  url: string;
+  title: string;
+  zoneName: string;
+  included: boolean;
+  pullCount: number;
+  bossCount: number;
+  playerCount: number;
+};
+
+export type RaidNightRecord = {
+  id: string;
+  name: string;
+  happenedAt: string;
+  included: boolean;
+  reportCount: number;
+  pullCount: number;
+  reports: RaidReportRecord[];
+};
+
+export type PlayerHistoryPoint = {
+  raidNightId: string;
+  label: string;
+  happenedAt: string;
+  present: boolean;
+  pulls: number;
+  scores: Record<ScoreKey, ScoreValue>;
+  dps: number | null;
+  hps: number | null;
 };
 
 export type RaidEvent = {
@@ -78,6 +113,8 @@ export type MechanicRule = {
 export type DashboardData = {
   season: string;
   raidNight: string;
+  raidNightId?: string;
+  raidNights?: Array<{ id: string; name: string; happenedAt: string }>;
   reportCode: string;
   raid: string;
   bosses: { id: string; name: string }[];

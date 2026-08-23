@@ -3,6 +3,7 @@ import type { DashboardData, MechanicRule, ModuleSettings, PlayerSnapshot, RaidE
 
 type ReportRow = {
   id: string;
+  raid_night_id: string;
   season_id: string;
   code: string;
   url: string;
@@ -11,6 +12,7 @@ type ReportRow = {
   start_time: number;
   season_name: string;
   raid_night: string;
+  happened_at: string;
 };
 
 type RosterRow = {
@@ -24,6 +26,7 @@ type RosterRow = {
   raid_nights: number;
   last_seen: number | null;
   included: number;
+  identity_id: string;
 };
 
 type PullRow = {
@@ -54,6 +57,7 @@ type PullPlayerRow = {
   performance_score: number;
   attendance_score: number;
   preparation_score: number;
+  identity_id: string;
 };
 
 type EventRow = {
@@ -85,8 +89,10 @@ type RuleRow = {
 };
 
 type ModuleRow = { module_key: string; enabled: number };
+type RaidNightRow = { id: string; name: string; happened_at: string; report_count: number };
+type AttendanceRow = { identity_id: string; nights: number };
 
-const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: false, preparation: false };
+const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
 
 const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
 
@@ -108,72 +114,97 @@ function average(players: PlayerSnapshot[], key: ScoreKey) {
   return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
 }
 
-export async function loadLatestDashboardData(): Promise<DashboardData | null> {
+export async function loadLatestDashboardData(selectedRaidNightId?: string | null): Promise<DashboardData | null> {
   const db = await ensureSchema();
-  const report = await db.prepare(`
-    SELECT r.id, rn.season_id, r.code, r.url, r.title, r.zone_name, r.start_time,
-           s.name AS season_name, rn.name AS raid_night
+  const reportStatement = db.prepare(`
+    SELECT r.id, r.raid_night_id, rn.season_id, r.code, r.url, r.title, r.zone_name, r.start_time,
+           s.name AS season_name, rn.name AS raid_night, rn.happened_at
     FROM reports r
     JOIN raid_nights rn ON rn.id = r.raid_night_id
     JOIN seasons s ON s.id = rn.season_id
-    WHERE r.source_mode = 'live'
+    WHERE r.source_mode = 'live' AND r.included = 1 AND rn.included = 1
+      AND (? IS NULL OR rn.id = ?)
     ORDER BY r.imported_at DESC, r.start_time DESC
     LIMIT 1
-  `).first<ReportRow>();
+  `).bind(selectedRaidNightId ?? null, selectedRaidNightId ?? null);
+  const report = await reportStatement.first<ReportRow>();
   if (!report) return null;
 
-  const [pullResult, playerResult, eventResult, ruleResult, rosterResult, moduleResult] = await Promise.all([
+  const [pullResult, playerResult, eventResult, ruleResult, rosterResult, moduleResult, raidNightResult, attendanceResult] = await Promise.all([
     db.prepare(`
       SELECT pu.id, pu.boss_id, b.name AS boss_name, pu.fight_id, pu.pull_number, pu.difficulty,
              pu.killed, pu.start_time, pu.end_time, pu.boss_percentage
-      FROM pulls pu JOIN bosses b ON b.id = pu.boss_id
-      WHERE pu.report_id = ? ORDER BY pu.start_time DESC
-    `).bind(report.id).all<PullRow>(),
+      FROM pulls pu JOIN bosses b ON b.id = pu.boss_id JOIN reports r ON r.id = pu.report_id
+      WHERE r.raid_night_id = ? AND r.included = 1 ORDER BY pu.start_time DESC
+    `).bind(report.raid_night_id).all<PullRow>(),
     db.prepare(`
       SELECT pp.pull_id, pu.boss_id, pp.player_id, p.name, p.realm, p.class_name, p.role, pp.spec,
              pp.parse, pp.ilvl_parse, pp.mechanics_score, pp.performance_score,
-             pp.attendance_score, pp.preparation_score
+             pp.attendance_score, pp.preparation_score, COALESCE(pi.identity_id, p.id) AS identity_id
       FROM pull_players pp
       JOIN players p ON p.id = pp.player_id
+      LEFT JOIN player_identities pi ON pi.player_id = p.id
       JOIN pulls pu ON pu.id = pp.pull_id
+      JOIN reports r ON r.id = pu.report_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
-      WHERE pu.report_id = ? AND COALESCE(prs.included, 1) = 1
+      WHERE r.raid_night_id = ? AND r.included = 1 AND COALESCE(prs.included, 1) = 1
       ORDER BY pu.start_time DESC, p.name
-    `).bind(report.id).all<PullPlayerRow>(),
+    `).bind(report.raid_night_id).all<PullPlayerRow>(),
     db.prepare(`
       SELECT e.id, e.pull_id, e.player_id, e.spell_id, e.event_type, e.timestamp, e.amount, e.outcome, e.details_json
       FROM events e
       JOIN pulls pu ON pu.id = e.pull_id
+      JOIN reports r ON r.id = pu.report_id
       LEFT JOIN mechanic_rules mr ON mr.id = e.rule_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = e.player_id
-      WHERE pu.report_id = ? AND COALESCE(prs.included, 1) = 1
+      WHERE r.raid_night_id = ? AND r.included = 1 AND COALESCE(prs.included, 1) = 1
         AND (e.rule_id IS NULL OR mr.enabled = 1)
       ORDER BY e.timestamp
-    `).bind(report.id).all<EventRow>(),
+    `).bind(report.raid_night_id).all<EventRow>(),
     db.prepare(`
       SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.icon, mr.category, mr.severity,
              mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json, mr.enabled
-      FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id
-      WHERE pu.report_id = ? ORDER BY mr.enabled DESC, mr.updated_at DESC
-    `).bind(report.id).all<RuleRow>(),
+      FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id JOIN reports r ON r.id = pu.report_id
+      WHERE r.raid_night_id = ? AND r.included = 1 ORDER BY mr.enabled DESC, mr.updated_at DESC
+    `).bind(report.raid_night_id).all<RuleRow>(),
     db.prepare(`
       SELECT p.id AS player_id, p.name, p.realm, p.class_name, p.role,
              MAX(pp.spec) AS spec,
              COUNT(DISTINCT pp.pull_id) AS pulls_seen,
              COUNT(DISTINCT r.raid_night_id) AS raid_nights,
              MAX(r.start_time) AS last_seen,
-             COALESCE(prs.included, 1) AS included
+             COALESCE(prs.included, 1) AS included,
+             COALESCE(pi.identity_id, p.id) AS identity_id
       FROM players p
       JOIN pull_players pp ON pp.player_id = p.id
       JOIN pulls pu ON pu.id = pp.pull_id
       JOIN reports r ON r.id = pu.report_id
       JOIN raid_nights rn ON rn.id = r.raid_night_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
-      WHERE rn.season_id = ? AND r.source_mode = 'live'
-      GROUP BY p.id, p.name, p.realm, p.class_name, p.role, prs.included
+      LEFT JOIN player_identities pi ON pi.player_id = p.id
+      WHERE rn.season_id = ? AND r.source_mode = 'live' AND rn.included = 1 AND r.included = 1
+      GROUP BY p.id, p.name, p.realm, p.class_name, p.role, prs.included, pi.identity_id
       ORDER BY COALESCE(prs.included, 1) DESC, p.name
     `).bind(report.season_id).all<RosterRow>(),
     db.prepare("SELECT module_key, enabled FROM score_module_settings").all<ModuleRow>(),
+    db.prepare(`
+      SELECT rn.id, rn.name, rn.happened_at, COUNT(DISTINCT r.id) AS report_count
+      FROM raid_nights rn JOIN reports r ON r.raid_night_id = rn.id
+      WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND r.source_mode = 'live'
+      GROUP BY rn.id, rn.name, rn.happened_at ORDER BY rn.happened_at DESC
+    `).bind(report.season_id).all<RaidNightRow>(),
+    db.prepare(`
+      SELECT COALESCE(pi.identity_id, p.id) AS identity_id, COUNT(DISTINCT r.raid_night_id) AS nights
+      FROM players p
+      JOIN pull_players pp ON pp.player_id = p.id
+      JOIN pulls pu ON pu.id = pp.pull_id
+      JOIN reports r ON r.id = pu.report_id
+      JOIN raid_nights rn ON rn.id = r.raid_night_id
+      LEFT JOIN player_identities pi ON pi.player_id = p.id
+      LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
+      WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND r.source_mode = 'live' AND COALESCE(prs.included, 1) = 1
+      GROUP BY COALESCE(pi.identity_id, p.id)
+    `).bind(report.season_id).all<AttendanceRow>(),
   ]);
 
   const pullRows = pullResult.results;
@@ -201,6 +232,8 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
   for (const row of moduleResult.results) {
     if (row.module_key in moduleSettings) moduleSettings[row.module_key as ScoreKey] = Boolean(row.enabled);
   }
+  const totalRaidNights = raidNightResult.results.length;
+  const attendanceByIdentity = new Map(attendanceResult.results.map((row) => [row.identity_id, totalRaidNights ? Math.round(Number(row.nights) / totalRaidNights * 100) : 0]));
 
   const pullEvents: Record<string, RaidEvent[]> = {};
   for (const row of eventResult.results) {
@@ -256,12 +289,12 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       scores: {
         mechanics,
         performance,
-        attendance: Math.round(row.attendance_score),
+        attendance: attendanceByIdentity.get(row.identity_id) ?? 0,
         preparation: row.preparation_score > 0 ? Math.round(row.preparation_score) : null,
       },
       parse,
       ilvlParse,
-      attendanceLabel: "Present this night",
+      attendanceLabel: `${attendanceByIdentity.get(row.identity_id) ?? 0}% across ${totalRaidNights} tracked night${totalRaidNights === 1 ? "" : "s"}`,
       prepLabel: "Not evaluated",
       trend: hasMechanicRules ? trend : [],
       summary: hasMechanicRules
@@ -303,6 +336,8 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     raidNights: Number(row.raid_nights),
     lastSeen: row.last_seen === null ? null : Number(row.last_seen),
     included: Boolean(row.included),
+    identityId: row.identity_id,
+    attendanceScore: attendanceByIdentity.get(row.identity_id) ?? 0,
   }));
   const firstPullId = pulls[0].id;
   const players = pullPlayers[firstPullId] ?? [];
@@ -316,6 +351,8 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
   return {
     season: report.season_name,
     raidNight: report.raid_night,
+    raidNightId: report.raid_night_id,
+    raidNights: raidNightResult.results.map((night) => ({ id: night.id, name: night.name, happenedAt: night.happened_at })),
     reportCode: report.code,
     raid: report.zone_name ?? report.title,
     bosses,
@@ -330,7 +367,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     raidAverages,
     dataSource: {
       label: "Live Warcraft Logs import",
-      detail: `${pulls.length} pulls imported from the full report`,
+      detail: `${pulls.length} pulls across ${raidNightResult.results.find((night) => night.id === report.raid_night_id)?.report_count ?? 1} report${(raidNightResult.results.find((night) => night.id === report.raid_night_id)?.report_count ?? 1) === 1 ? "" : "s"}`,
       reportUrl: report.url,
     },
     preparationSummary: "Warcraft Logs does not provide a complete individual food, flask, enchant, and potion score through this import yet.",
