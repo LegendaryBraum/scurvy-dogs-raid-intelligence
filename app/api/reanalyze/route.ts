@@ -53,9 +53,9 @@ export async function POST(request: Request) {
       const actors = report.masterData?.actors ?? [];
       const abilities = new Map((report.masterData?.abilities ?? []).map((ability) => [ability.gameID, ability.name]));
       const scoredRules = ruleResult.results
-        .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context")
+        .filter((rule) => parseJson<{ scoringMode?: string }>(rule.condition_json, {}).scoringMode !== "context");
       const scoredSpellIds = scoredRules.map((rule) => rule.spell_id);
-      const reportRuleEvents = await fetchRuleEvents(code, storedPulls.map((pull) => pull.fight_id), scoredRules.map((rule) => ({ spellId: rule.spell_id, eventType: rule.event_type })), token);
+      const ruleEventFilters = scoredRules.map((rule) => ({ spellId: rule.spell_id, eventType: rule.event_type }));
       for (const storedPull of storedPulls) {
         const fight = report.fights.find((candidate) => candidate.id === storedPull.fight_id);
         if (!fight) continue;
@@ -71,10 +71,7 @@ export async function POST(request: Request) {
           participantIds.set(actorId, player.player_id);
           participantRoles.set(player.player_id, player.role);
         }
-        const fightRuleEvents = reportRuleEvents.filter((raw) => {
-          const timestamp = Number(raw && typeof raw === "object" ? (raw as Record<string, unknown>).timestamp : 0);
-          return timestamp >= fight.startTime && timestamp <= fight.endTime;
-        });
+        const fightRuleEvents = await fetchRuleEvents(code, [fight.id], ruleEventFilters, token);
         const contextEvents = { deaths: [], interrupts: [], dispels: [] };
         const result = await analyzeFightRules({
           db,
