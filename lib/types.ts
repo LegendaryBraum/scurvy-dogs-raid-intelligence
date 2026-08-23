@@ -1,5 +1,6 @@
 export type ScoreKey = "mechanics" | "performance" | "attendance" | "preparation";
 export type ScoreValue = number | null;
+export type ModuleSettings = Record<ScoreKey, boolean>;
 
 export type PlayerSnapshot = {
   id: string;
@@ -23,6 +24,7 @@ export type PlayerSnapshot = {
   dispels: number;
   avoidableDamage: number;
   raidAverages?: Record<ScoreKey, ScoreValue>;
+  enabledModules?: ModuleSettings;
 };
 
 export type RosterMember = {
@@ -68,6 +70,7 @@ export type MechanicRule = {
     maxOccurrencesPerPull?: number;
     note?: string;
   };
+  enabled?: boolean;
 };
 
 export type DashboardData = {
@@ -83,6 +86,7 @@ export type DashboardData = {
   pullPlayers?: Record<string, PlayerSnapshot[]>;
   pullEvents?: Record<string, RaidEvent[]>;
   rules: MechanicRule[];
+  moduleSettings: ModuleSettings;
   raidAverages: Record<ScoreKey, ScoreValue>;
   dataSource?: {
     label: string;

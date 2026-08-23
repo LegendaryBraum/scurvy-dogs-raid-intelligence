@@ -10,6 +10,7 @@ export function scoreMechanics(events: RaidEvent[], rules: MechanicRule[], role:
 
   for (const event of events) {
     const rule = rules.find((candidate) =>
+      candidate.enabled !== false &&
       candidate.spellId === event.spellId &&
       candidate.roles.includes(role) &&
       candidate.difficulties.includes(difficulty) &&

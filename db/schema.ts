@@ -45,6 +45,12 @@ export const playerRosterSettings = sqliteTable("player_roster_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("idx_player_roster_settings_included").on(table.included)]);
 
+export const scoreModuleSettings = sqliteTable("score_module_settings", {
+  moduleKey: text("module_key").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const pullPlayers = sqliteTable("pull_players", {
   id: text("id").primaryKey(), pullId: text("pull_id").notNull().references(() => pulls.id),
   playerId: text("player_id").notNull().references(() => players.id), spec: text("spec").notNull().default("Unknown"),

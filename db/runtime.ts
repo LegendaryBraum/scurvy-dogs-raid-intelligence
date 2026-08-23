@@ -21,6 +21,7 @@ export async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS pulls (id TEXT PRIMARY KEY, report_id TEXT NOT NULL REFERENCES reports(id), boss_id TEXT NOT NULL REFERENCES bosses(id), fight_id INTEGER NOT NULL, pull_number INTEGER NOT NULL, difficulty INTEGER, killed INTEGER NOT NULL DEFAULT 0, start_time INTEGER NOT NULL, end_time INTEGER NOT NULL, boss_percentage REAL, UNIQUE(report_id, fight_id))`,
     `CREATE TABLE IF NOT EXISTS players (id TEXT PRIMARY KEY, name TEXT NOT NULL, realm TEXT NOT NULL DEFAULT '', class_name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'DPS', UNIQUE(name, realm))`,
     `CREATE TABLE IF NOT EXISTS player_roster_settings (player_id TEXT PRIMARY KEY REFERENCES players(id), included INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS score_module_settings (module_key TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS pull_players (id TEXT PRIMARY KEY, pull_id TEXT NOT NULL REFERENCES pulls(id), player_id TEXT NOT NULL REFERENCES players(id), spec TEXT NOT NULL DEFAULT 'Unknown', dps REAL NOT NULL DEFAULT 0, hps REAL NOT NULL DEFAULT 0, parse REAL NOT NULL DEFAULT 0, ilvl_parse REAL NOT NULL DEFAULT 0, deaths INTEGER NOT NULL DEFAULT 0, mechanics_score REAL NOT NULL DEFAULT 100, performance_score REAL NOT NULL DEFAULT 0, attendance_score REAL NOT NULL DEFAULT 100, preparation_score REAL NOT NULL DEFAULT 100, UNIQUE(pull_id, player_id))`,
     `CREATE TABLE IF NOT EXISTS mechanic_rules (id TEXT PRIMARY KEY, boss_id TEXT NOT NULL REFERENCES bosses(id), spell_id INTEGER NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, severity TEXT NOT NULL, weight REAL NOT NULL, event_type TEXT NOT NULL, difficulties_json TEXT NOT NULL DEFAULT '[]', roles_json TEXT NOT NULL DEFAULT '[]', condition_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, pull_id TEXT NOT NULL REFERENCES pulls(id), player_id TEXT REFERENCES players(id), rule_id TEXT REFERENCES mechanic_rules(id), spell_id INTEGER NOT NULL, event_type TEXT NOT NULL, timestamp INTEGER NOT NULL, amount REAL, outcome TEXT NOT NULL DEFAULT 'observed', details_json TEXT NOT NULL DEFAULT '{}')`,
@@ -35,6 +36,10 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS idx_events_pull_player ON events(pull_id, player_id)`,
     `CREATE INDEX IF NOT EXISTS idx_events_spell ON events(spell_id)`,
     `CREATE INDEX IF NOT EXISTS idx_shares_player ON shares(player_id)`,
+    `INSERT OR IGNORE INTO score_module_settings (module_key, enabled) VALUES ('mechanics', 1)`,
+    `INSERT OR IGNORE INTO score_module_settings (module_key, enabled) VALUES ('performance', 1)`,
+    `INSERT OR IGNORE INTO score_module_settings (module_key, enabled) VALUES ('attendance', 0)`,
+    `INSERT OR IGNORE INTO score_module_settings (module_key, enabled) VALUES ('preparation', 0)`,
     `PRAGMA optimize`,
   ];
   await db.batch(statements.map((statement) => db.prepare(statement)));

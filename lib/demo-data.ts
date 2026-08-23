@@ -64,4 +64,5 @@ export const demoData: DashboardData = {
     { id: "rule-brand", bossId: "gilded-tyrant", spellId: 451002, name: "Royal Brand", category: "Dispel", severity: "High", weight: 8, eventType: "dispel", difficulties: ["Heroic", "Mythic"], roles: ["Healer"], condition: { note: "Evaluate assigned healers only." } },
     { id: "rule-overthrow", bossId: "gilded-tyrant", spellId: 451204, name: "Overthrow", category: "Defensive", severity: "High", weight: 7, eventType: "death", difficulties: ["Heroic", "Mythic"], roles: ["Tank", "Healer", "DPS"], condition: { countOncePerCast: true } },
   ],
+  moduleSettings: { mechanics: true, performance: true, attendance: false, preparation: false },
 };

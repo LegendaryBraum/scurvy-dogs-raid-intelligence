@@ -7,7 +7,9 @@ An internal raid-analysis MVP built around a simple promise: a player should und
 - Accepts one or multiple full-run Warcraft Logs report URLs and previews the raid contents before saving.
 - Stores the hierarchy `Season → Raid Night → Report → Boss → Pull → Player` in D1.
 - Keeps encounter rules separate from the generic analysis engine.
+- Lets officers edit, duplicate, pause, and restore encounter rules without deleting their history.
 - Scores Mechanics, DPS/HPS Performance, Attendance, and Preparation independently.
+- Lets officers pause any score module across player, officer, and private views without deleting stored data.
 - Gives officers a full-roster comparison without inventing one opaque overall score.
 - Gives players a single dashboard with player, boss, and pull selectors updating in place.
 - Creates expiring player-only links with anonymous raid-average context and no teammate detail.

@@ -21,14 +21,15 @@ test("server-renders the player-first dashboard", async () => {
   assert.match(html, /Nek.zali the Soulcoiler/);
   assert.match(html, /Mechanics/);
   assert.match(html, /Performance/);
-  assert.match(html, /Attendance/);
-  assert.match(html, /Preparation/);
+  assert.match(html, /score-grid-2/);
+  assert.doesNotMatch(html, />Attendance</);
+  assert.doesNotMatch(html, />Preparation</);
   assert.match(html, /View details/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview/);
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
@@ -38,6 +39,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/share/[token]/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/warcraft-logs.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/roster/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/modules/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/config/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -48,6 +51,10 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Only the selected pulls/);
   assert.match(app, /Choose who belongs in the analysis/);
   assert.match(app, /Ignore guest/);
+  assert.match(app, /Use only what matters right now/);
+  assert.match(app, /Pause module/);
+  assert.match(app, /Duplicate/);
+  assert.match(app, /Save rule changes/);
   assert.match(importer, /fetchReportPreview/);
   assert.match(warcraftLogs, /participatingPlayerIds\.size/);
   assert.match(warcraftLogs, /keystoneAffixes/);
@@ -66,6 +73,9 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(schema, /mechanicRules/);
   assert.match(schema, /pullPlayers/);
   assert.match(schema, /playerRosterSettings/);
+  assert.match(schema, /scoreModuleSettings/);
+  assert.match(modules, /score_module_settings/);
+  assert.match(config, /export async function PATCH/);
   assert.match(roster, /DELETE FROM shares WHERE player_id/);
   assert.match(share, /No other player names/);
   assert.match(share, /robots: \{ index: false/);

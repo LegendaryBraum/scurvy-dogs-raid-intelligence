@@ -1,5 +1,5 @@
 import { ensureSchema } from "../db/runtime";
-import type { DashboardData, MechanicRule, PlayerSnapshot, RaidEvent, RosterMember, ScoreKey } from "./types";
+import type { DashboardData, MechanicRule, ModuleSettings, PlayerSnapshot, RaidEvent, RosterMember, ScoreKey } from "./types";
 
 type ReportRow = {
   id: string;
@@ -80,7 +80,12 @@ type RuleRow = {
   difficulties_json: string;
   roles_json: string;
   condition_json: string;
+  enabled: number;
 };
+
+type ModuleRow = { module_key: string; enabled: number };
+
+const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: false, preparation: false };
 
 const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
 
@@ -116,7 +121,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
   `).first<ReportRow>();
   if (!report) return null;
 
-  const [pullResult, playerResult, eventResult, ruleResult, rosterResult] = await Promise.all([
+  const [pullResult, playerResult, eventResult, ruleResult, rosterResult, moduleResult] = await Promise.all([
     db.prepare(`
       SELECT pu.id, pu.boss_id, b.name AS boss_name, pu.fight_id, pu.pull_number, pu.difficulty,
              pu.killed, pu.start_time, pu.end_time, pu.boss_percentage
@@ -138,15 +143,17 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       SELECT e.id, e.pull_id, e.player_id, e.spell_id, e.event_type, e.timestamp, e.amount, e.outcome, e.details_json
       FROM events e
       JOIN pulls pu ON pu.id = e.pull_id
+      LEFT JOIN mechanic_rules mr ON mr.id = e.rule_id
       LEFT JOIN player_roster_settings prs ON prs.player_id = e.player_id
       WHERE pu.report_id = ? AND COALESCE(prs.included, 1) = 1
+        AND (e.rule_id IS NULL OR mr.enabled = 1)
       ORDER BY e.timestamp
     `).bind(report.id).all<EventRow>(),
     db.prepare(`
       SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.category, mr.severity,
-             mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json
+             mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json, mr.enabled
       FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id
-      WHERE pu.report_id = ? AND mr.enabled = 1 ORDER BY mr.updated_at DESC
+      WHERE pu.report_id = ? ORDER BY mr.enabled DESC, mr.updated_at DESC
     `).bind(report.id).all<RuleRow>(),
     db.prepare(`
       SELECT p.id AS player_id, p.name, p.realm, p.class_name, p.role,
@@ -165,6 +172,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
       GROUP BY p.id, p.name, p.realm, p.class_name, p.role, prs.included
       ORDER BY COALESCE(prs.included, 1) DESC, p.name
     `).bind(report.season_id).all<RosterRow>(),
+    db.prepare("SELECT module_key, enabled FROM score_module_settings").all<ModuleRow>(),
   ]);
 
   const pullRows = pullResult.results;
@@ -182,9 +190,15 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     difficulties: parseJson(rule.difficulties_json, []),
     roles: parseJson(rule.roles_json, []),
     condition: parseJson(rule.condition_json, {}),
+    enabled: Boolean(rule.enabled),
   }));
   const ruleCountByBoss = new Map<string, number>();
-  rules.forEach((rule) => ruleCountByBoss.set(rule.bossId, (ruleCountByBoss.get(rule.bossId) ?? 0) + 1));
+  rules.filter((rule) => rule.enabled).forEach((rule) => ruleCountByBoss.set(rule.bossId, (ruleCountByBoss.get(rule.bossId) ?? 0) + 1));
+
+  const moduleSettings = { ...defaultModuleSettings };
+  for (const row of moduleResult.results) {
+    if (row.module_key in moduleSettings) moduleSettings[row.module_key as ScoreKey] = Boolean(row.enabled);
+  }
 
   const pullEvents: Record<string, RaidEvent[]> = {};
   for (const row of eventResult.results) {
@@ -309,6 +323,7 @@ export async function loadLatestDashboardData(): Promise<DashboardData | null> {
     pullPlayers,
     pullEvents,
     rules,
+    moduleSettings,
     raidAverages,
     dataSource: {
       label: "Live Warcraft Logs import",

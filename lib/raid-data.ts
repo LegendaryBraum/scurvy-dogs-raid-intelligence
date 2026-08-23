@@ -161,6 +161,7 @@ export const raidData: DashboardData = {
   players,
   events,
   rules,
+  moduleSettings: { mechanics: true, performance: true, attendance: false, preparation: false },
   raidAverages: { mechanics: RAID_MECHANICS_AVERAGE, performance: performanceAverage, attendance: 100, preparation: null },
   dataSource: {
     label: "Real raid snapshot",

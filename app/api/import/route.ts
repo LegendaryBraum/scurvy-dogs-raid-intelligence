@@ -20,8 +20,6 @@ type ImportPayload = {
   selections?: Array<{ code: string; fightIds: number[] }>;
 };
 
-const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
-
 function roleFromSpec(spec: string) {
   if (["Restoration", "Holy", "Discipline", "Mistweaver", "Preservation"].includes(spec)) return "Healer";
   if (["Protection", "Blood", "Brewmaster", "Guardian", "Vengeance"].includes(spec)) return "Tank";

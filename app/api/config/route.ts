@@ -7,7 +7,7 @@ export const runtime = "edge";
 export async function GET() {
   try {
     const db = await ensureSchema();
-    const rows = await db.prepare("SELECT * FROM mechanic_rules WHERE enabled = 1 ORDER BY updated_at DESC").all<Record<string, unknown>>();
+    const rows = await db.prepare("SELECT * FROM mechanic_rules ORDER BY enabled DESC, updated_at DESC").all<Record<string, unknown>>();
     return Response.json({ rules: rows.results });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Rules could not be loaded." }, { status: 500 });
@@ -32,10 +32,26 @@ export async function POST(request: Request) {
           .bind(rule.bossId, seasonId, Number(rule.bossId.match(/\d+/)?.[0] ?? 0), raidData.raid, staticBoss.name),
       ]);
     }
-    await db.prepare("INSERT INTO mechanic_rules (id, boss_id, spell_id, name, category, severity, weight, event_type, difficulties_json, roles_json, condition_json, enabled, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET spell_id = excluded.spell_id, name = excluded.name, category = excluded.category, severity = excluded.severity, weight = excluded.weight, event_type = excluded.event_type, difficulties_json = excluded.difficulties_json, roles_json = excluded.roles_json, condition_json = excluded.condition_json, enabled = 1, updated_at = CURRENT_TIMESTAMP")
-      .bind(rule.id, rule.bossId, Number(rule.spellId), rule.name.trim(), rule.category, rule.severity, Number(rule.weight), rule.eventType, JSON.stringify(rule.difficulties), JSON.stringify(rule.roles), JSON.stringify(rule.condition)).run();
-    return Response.json({ rule, saved: true }, { status: 201 });
+    await db.prepare("INSERT INTO mechanic_rules (id, boss_id, spell_id, name, category, severity, weight, event_type, difficulties_json, roles_json, condition_json, enabled, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET spell_id = excluded.spell_id, name = excluded.name, category = excluded.category, severity = excluded.severity, weight = excluded.weight, event_type = excluded.event_type, difficulties_json = excluded.difficulties_json, roles_json = excluded.roles_json, condition_json = excluded.condition_json, enabled = excluded.enabled, updated_at = CURRENT_TIMESTAMP")
+      .bind(rule.id, rule.bossId, Number(rule.spellId), rule.name.trim(), rule.category, rule.severity, Number(rule.weight), rule.eventType, JSON.stringify(rule.difficulties), JSON.stringify(rule.roles), JSON.stringify(rule.condition), rule.enabled === false ? 0 : 1).run();
+    return Response.json({ rule: { ...rule, enabled: rule.enabled !== false }, saved: true }, { status: 201 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Rule could not be saved." }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const payload = await request.json() as { id?: string; enabled?: boolean };
+    if (!payload.id || typeof payload.enabled !== "boolean") {
+      return Response.json({ error: "Choose a rule and active or paused state." }, { status: 400 });
+    }
+    const db = await ensureSchema();
+    const result = await db.prepare("UPDATE mechanic_rules SET enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+      .bind(payload.enabled ? 1 : 0, payload.id).run();
+    if (!result.meta.changes) return Response.json({ error: "That rule no longer exists." }, { status: 404 });
+    return Response.json({ id: payload.id, enabled: payload.enabled });
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Rule state could not be changed." }, { status: 500 });
   }
 }
