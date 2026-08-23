@@ -28,13 +28,14 @@ test("server-renders the player-first dashboard", async () => {
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, dashboard, scoring, schema, share] = await Promise.all([
+  const [app, importer, dashboard, scoring, schema, share, warcraftLogs] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/dashboard-data.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/scoring.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/share/[token]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/warcraft-logs.ts", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -43,6 +44,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Review full run/);
   assert.match(app, /Confirm and import everything/);
   assert.match(importer, /fetchReportPreview/);
+  assert.match(warcraftLogs, /participatingPlayerIds\.size/);
   assert.match(importer, /fetchFightContextEvents/);
   assert.doesNotMatch(importer, /demoOverview|sourceMode = "demo"/);
   assert.match(dashboard, /pullPlayers/);

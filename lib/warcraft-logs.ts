@@ -138,6 +138,7 @@ export async function fetchReportPreview(code: string, credentials: WarcraftLogs
   const report = data.reportData.report;
   if (!report) throw new Error(`Report ${code} was not found, public, or unlisted.`);
   const fights = report.fights.filter((fight) => fight.encounterID > 0);
+  const participatingPlayerIds = new Set(fights.flatMap((fight) => fight.friendlyPlayers ?? []));
   const bossMap = new Map<string, { name: string; pulls: number; kills: number }>();
   for (const fight of fights) {
     const entry = bossMap.get(fight.name) ?? { name: fight.name, pulls: 0, kills: 0 };
@@ -152,7 +153,7 @@ export async function fetchReportPreview(code: string, credentials: WarcraftLogs
     visibility: report.visibility,
     startedAt: report.startTime,
     pullCount: fights.length,
-    playerCount: report.masterData?.actors?.length ?? 0,
+    playerCount: participatingPlayerIds.size,
     bosses: [...bossMap.values()],
   };
   return preview;
