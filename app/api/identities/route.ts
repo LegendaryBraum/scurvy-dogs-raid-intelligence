@@ -1,9 +1,11 @@
 import { ensureSchema } from "../../../db/runtime";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
 export async function POST(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { playerId?: string; identityId?: string };
     if (!payload.playerId || !payload.identityId) {
       return Response.json({ error: "Choose a character and the raider identity it belongs to." }, { status: 400 });

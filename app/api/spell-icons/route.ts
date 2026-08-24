@@ -1,10 +1,12 @@
 import { ensureSchema, getRuntimeEnv } from "../../../db/runtime";
 import { fetchReportOverview } from "../../../lib/warcraft-logs";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
 export async function POST(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { reportCode?: string; spellIds?: number[] };
     const spellIds = [...new Set((payload.spellIds ?? []).map(Number).filter((spellId) => Number.isInteger(spellId) && spellId > 0))].slice(0, 250);
     if (!payload.reportCode || !spellIds.length) {

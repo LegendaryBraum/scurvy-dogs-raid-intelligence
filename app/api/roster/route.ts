@@ -1,9 +1,11 @@
 import { ensureSchema } from "../../../db/runtime";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
 export async function POST(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { playerId?: string; included?: boolean };
     if (!payload.playerId || typeof payload.included !== "boolean") {
       return Response.json({ error: "Choose a player and whether they should be included." }, { status: 400 });
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
         VALUES (?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(player_id) DO UPDATE SET included = excluded.included, updated_at = CURRENT_TIMESTAMP
       `).bind(payload.playerId, payload.included ? 1 : 0),
-      ...(payload.included ? [] : [db.prepare("DELETE FROM shares WHERE player_id = ?").bind(payload.playerId)]),
+      ...(payload.included ? [] : [db.prepare("DELETE FROM shares WHERE player_id = ?").bind(payload.playerId), db.prepare("UPDATE player_access_links SET revoked_at = CURRENT_TIMESTAMP WHERE player_id = ? AND revoked_at IS NULL").bind(payload.playerId)]),
     ]);
 
     return Response.json({ playerId: player.id, name: player.name, included: payload.included });

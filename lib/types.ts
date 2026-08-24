@@ -25,6 +25,7 @@ export type PlayerSnapshot = {
   avoidableDamage: number;
   raidAverages?: Record<ScoreKey, ScoreValue>;
   enabledModules?: ModuleSettings;
+  raidNightLabel?: string;
 };
 
 export type RosterMember = {
@@ -86,6 +87,29 @@ export type PlayerHistoryPoint = {
   scores: Record<ScoreKey, ScoreValue>;
   dps: number | null;
   hps: number | null;
+};
+
+export type OfficerAccessRecord = {
+  id: string;
+  name: string;
+  sessions: Array<{ id: string; deviceLabel: string; createdAt: string; lastUsedAt: string; current: boolean }>;
+  invites: Array<{ id: string; deviceLabel: string; createdAt: string; expiresAt: string }>;
+};
+
+export type PlayerAccessRecord = {
+  token: string;
+  playerId: string;
+  playerName: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  url: string;
+};
+
+export type AccessWorkspace = {
+  currentSessionId: string;
+  currentOfficerName: string;
+  officers: OfficerAccessRecord[];
+  players: PlayerAccessRecord[];
 };
 
 export type RaidEvent = {

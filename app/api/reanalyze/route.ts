@@ -1,6 +1,7 @@
 import { ensureSchema, getRuntimeEnv } from "../../../db/runtime";
 import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
 import { fetchReportOverview, fetchRuleEvents, groupRuleEventsByAbility } from "../../../lib/warcraft-logs";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
@@ -21,6 +22,7 @@ function parseJson<T>(value: string, fallback: T): T { try { return JSON.parse(v
 
 export async function POST(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { bossId?: string };
     if (!payload.bossId) return Response.json({ error: "Choose a boss to recalculate." }, { status: 400 });
 

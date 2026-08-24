@@ -1,5 +1,6 @@
 import { ensureSchema } from "../../../db/runtime";
 import type { PlayerHistoryPoint } from "../../../lib/types";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
@@ -19,6 +20,7 @@ function rounded(value: number | null) { return value === null ? null : Math.rou
 
 export async function GET(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const playerId = new URL(request.url).searchParams.get("playerId");
     if (!playerId) return Response.json({ error: "Choose a player to view history." }, { status: 400 });
     const db = await ensureSchema();

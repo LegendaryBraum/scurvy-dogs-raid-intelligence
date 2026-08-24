@@ -1,6 +1,6 @@
 import { RaidApp } from "./components/RaidApp";
-import { raidData } from "../lib/raid-data";
+import { privatePlaceholderData } from "../lib/private-placeholder";
 
 export default function Home() {
-  return <RaidApp initialData={raidData} />;
+  return <RaidApp initialData={privatePlaceholderData} />;
 }

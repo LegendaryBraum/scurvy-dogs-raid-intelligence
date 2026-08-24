@@ -9,6 +9,7 @@ import {
   parseReportUrls,
 } from "../../../lib/warcraft-logs";
 import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
@@ -68,6 +69,7 @@ async function removeStoredReport(db: D1Database, reportId: string) {
 
 export async function POST(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as ImportPayload;
     const parsed = parseReportUrls(payload.urls ?? []);
     if (!parsed.reports.length) {

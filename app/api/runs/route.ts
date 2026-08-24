@@ -1,5 +1,6 @@
 import { ensureSchema } from "../../../db/runtime";
 import type { RaidNightRecord, RaidPullRecord, RaidReportRecord } from "../../../lib/types";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
@@ -104,8 +105,9 @@ async function permanentlyDeleteReport(db: D1Database, reportId: string) {
   ]);
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const db = await ensureSchema();
     return Response.json({ raidNights: await readRaidNights(db) });
   } catch (error) {
@@ -115,6 +117,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { target?: "raid_night" | "report" | "pull"; id?: string; included?: boolean };
     if (!payload.id || !payload.target || !["raid_night", "report", "pull"].includes(payload.target) || typeof payload.included !== "boolean") {
       return Response.json({ error: "Choose a raid night, report, or pull and its active state." }, { status: 400 });
@@ -139,6 +142,7 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { target?: "raid_night" | "report"; id?: string };
     if (!payload.id || !payload.target) return Response.json({ error: "Choose a raid night or report to delete." }, { status: 400 });
     const db = await ensureSchema();

@@ -11,29 +11,19 @@ async function render(pathname = "/", init = {}) {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders the player-first dashboard", async () => {
+test("server-renders the link-locked public shell without private raid data", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Scurvy Dogs/);
-  assert.match(html, /Clear next step/);
-  assert.match(html, /Real raid snapshot/);
-  assert.match(html, /Nek.zali the Soulcoiler/);
-  assert.match(html, /Mechanics/);
-  assert.match(html, /Performance/);
-  assert.match(html, /score-grid-3/);
-  assert.match(html, />Attendance</);
-  assert.doesNotMatch(html, />Preparation</);
-  assert.match(html, /Raid night/);
-  assert.match(html, />History</);
-  assert.match(html, /View details/);
-  assert.match(html, /spell-icon-link/);
-  assert.match(html, /wowhead\.com\/spell=/);
+  assert.match(html, /Checking this device/);
+  assert.match(html, /Link access/);
+  assert.doesNotMatch(html, /Nek\.zali|Real raid snapshot|score-grid-3/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview/);
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
@@ -51,6 +41,13 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/history/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0004_special_menace.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0005_lean_thunderbolt.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/access/manage/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/access/session/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/officer-access.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/access/owner/[token]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/share/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/private-placeholder.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0006_wandering_liz_osborn.sql", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -70,6 +67,10 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Roster & alts/);
   assert.match(app, /Clean roster, then link/);
   assert.match(app, /role="tabpanel"/);
+  assert.match(app, /Control every private link from one place/);
+  assert.match(app, /Players & officers/);
+  assert.match(app, /Revoke all other officer access/);
+  assert.match(app, /Create one-time link/);
   assert.ok(app.indexOf("<RosterManager members") < app.indexOf("<IdentityManager members"));
   assert.match(app, /Night-by-night/);
   assert.match(app, /Replace \/ reimport/);
@@ -122,4 +123,23 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(roster, /DELETE FROM shares WHERE player_id/);
   assert.match(share, /No other player names/);
   assert.match(share, /robots: \{ index: false/);
+  assert.match(accessManage, /player_access_links/);
+  assert.match(accessManage, /officer_sessions/);
+  assert.match(accessManage, /all_other_officers/);
+  assert.match(accessManage, /currentSessionId/);
+  assert.match(accessSession, /clearOfficerSessionCookie/);
+  assert.match(officerAccess, /HttpOnly; Secure; SameSite=Lax/);
+  assert.match(ownerAccess, /OFFICER_BOOTSTRAP_KEY/);
+  assert.match(ownerAccess, /owner_bootstrap_hash/);
+  assert.match(shareApi, /player_access_links/);
+  assert.match(shareApi, /living: true/);
+  assert.match(accessMigration, /CREATE TABLE `access_settings`/);
+  assert.match(accessMigration, /CREATE TABLE `officers`/);
+  assert.match(accessMigration, /CREATE TABLE `officer_invites`/);
+  assert.match(accessMigration, /CREATE TABLE `officer_sessions`/);
+  assert.match(accessMigration, /CREATE TABLE `player_access_links`/);
+  assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
+  for (const privateRoute of [importer, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi]) assert.match(privateRoute, /getOfficerSession/);
+  assert.match(schema, /playerAccessLinks/);
+  assert.match(schema, /officerSessions/);
 });

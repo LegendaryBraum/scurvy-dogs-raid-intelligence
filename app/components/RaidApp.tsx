@@ -3,10 +3,10 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { DashboardData, MechanicRule, ModuleSettings, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
+import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
 
 type View = "player" | "officer" | "configure";
-type ConfigureSection = "raid-data" | "people" | "scoring";
+type ConfigureSection = "raid-data" | "people" | "scoring" | "access";
 type ImportFight = { id: number; name: string; pullNumber: number; difficulty: string; duration: string; result: string; playerCount: number };
 type ImportGroup = { id: string; label: string; description: string; kind: "raid" | "mythic_plus" | "other"; defaultSelected: boolean; fights: ImportFight[] };
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
@@ -58,6 +58,78 @@ function IdentityManager({ members, busy, status, onLink }: { members: RosterMem
   return <article className="panel identity-manager"><div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raider identities</p><h2>Link mains and alternate characters</h2><p>Attendance follows the person. Choose another active character only when both names belong to the same raider.</p></div><div className="module-count"><strong>{new Set(activeMembers.map((member) => member.identityId ?? member.id)).size}</strong><small>Raiders</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="identity-list">{activeMembers.map((member) => { const identity = members.find((candidate) => candidate.id === (member.identityId ?? member.id)); return <label key={member.id}><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><span><strong>{member.name}</strong><small>{member.spec} {member.className}{identity && identity.id !== member.id ? ` · linked with ${identity.name}` : " · own attendance"}</small></span><select disabled={busy} value={member.identityId ?? member.id} onChange={(event) => onLink(member.id, event.target.value)}><option value={member.id}>Keep separate</option>{activeMembers.filter((candidate) => candidate.id !== member.id).map((candidate) => <option value={candidate.identityId ?? candidate.id} key={candidate.id}>Same raider as {candidate.name}</option>)}</select></label>; })}</div></article>;
 }
 
+function AccessManager({ members }: { members: RosterMember[] }) {
+  const [access, setAccess] = useState<AccessWorkspace | null>(null);
+  const [tab, setTab] = useState<"players" | "officers">("players");
+  const [status, setStatus] = useState("");
+  const [createdUrl, setCreatedUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const activeMembers = members.filter((member) => member.included);
+  const formatDate = (value: string | null) => value ? new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Never opened";
+
+  useEffect(() => {
+    fetch("/api/access/manage")
+      .then(async (response) => {
+        const result = await response.json() as { access?: AccessWorkspace; error?: string };
+        if (!response.ok || !result.access) throw new Error(result.error ?? "Access records could not be loaded.");
+        return result.access;
+      })
+      .then(setAccess)
+      .catch((error) => setStatus(error instanceof Error ? error.message : "Access records could not be loaded."));
+  }, []);
+
+  async function copy(url: string) {
+    try { await navigator.clipboard.writeText(url); setStatus("Private link copied."); }
+    catch { setCreatedUrl(url); setStatus("Copy this private link from the field below."); }
+  }
+
+  async function createPlayer(playerId: string) {
+    setBusy(true); setStatus("Creating a living player link…"); setCreatedUrl("");
+    try {
+      const response = await fetch("/api/access/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "player", playerId }) });
+      const result = await response.json() as { access?: AccessWorkspace; url?: string; error?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? "Player access could not be created.");
+      if (result.access) setAccess(result.access); setCreatedUrl(result.url); await copy(result.url);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Player access could not be created."); }
+    finally { setBusy(false); }
+  }
+
+  async function createOfficer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setStatus("Creating a one-time officer link…"); setCreatedUrl("");
+    const formElement = event.currentTarget;
+    try {
+      const form = new FormData(formElement);
+      const response = await fetch("/api/access/manage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "officer", name: form.get("name"), deviceLabel: form.get("deviceLabel") }) });
+      const result = await response.json() as { access?: AccessWorkspace; url?: string; error?: string };
+      if (!response.ok || !result.url) throw new Error(result.error ?? "Officer access could not be created.");
+      if (result.access) setAccess(result.access); setCreatedUrl(result.url); formElement.reset(); await copy(result.url);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Officer access could not be created."); }
+    finally { setBusy(false); }
+  }
+
+  async function revoke(kind: "player" | "session" | "invite" | "officer" | "all_other_officers", id?: string, label?: string) {
+    if (!window.confirm(kind === "all_other_officers" ? "Revoke every other officer device and every unused officer invite?" : `Revoke ${label ?? "this access"}?`)) return;
+    setBusy(true); setStatus("Revoking access…"); setCreatedUrl("");
+    try {
+      const response = await fetch("/api/access/manage", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id }) });
+      const result = await response.json() as { access?: AccessWorkspace; error?: string };
+      if (!response.ok || !result.access) throw new Error(result.error ?? "Access could not be revoked.");
+      setAccess(result.access); setStatus("Access revoked immediately.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Access could not be revoked."); }
+    finally { setBusy(false); }
+  }
+
+  return <article className="panel access-manager">
+    <div className="access-manager-heading"><div><p className="eyebrow muted"><span /> Link access</p><h2>Control every private link from one place</h2><p>Player links stay read-only and current. Officer links activate named devices once, then every session remains individually revocable.</p></div><div className="module-count"><strong>{(access?.players.length ?? 0) + (access?.officers.reduce((total, officer) => total + officer.sessions.length, 0) ?? 0)}</strong><small>Active access</small></div></div>
+    <div className="access-tabs" role="tablist" aria-label="Access types"><button aria-selected={tab === "players"} className={tab === "players" ? "active" : ""} onClick={() => setTab("players")} role="tab" type="button">Players</button><button aria-selected={tab === "officers"} className={tab === "officers" ? "active" : ""} onClick={() => setTab("officers")} role="tab" type="button">Officers</button></div>
+    {status && <p className="roster-status" role="status">{status}</p>}
+    {createdUrl && <label className="created-access-link">New private link<input readOnly value={createdUrl} onFocus={(event) => event.currentTarget.select()} /></label>}
+    {!access && <p className="detail-empty">Loading active access…</p>}
+    {access && tab === "players" && <div className="access-list">{activeMembers.map((member) => { const link = access.players.find((candidate) => candidate.playerId === member.id); return <div className="access-row" key={member.id}><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><div><strong>{member.name}</strong><small>{link ? `Created ${formatDate(link.createdAt)} · last opened ${formatDate(link.lastUsedAt)}` : "No active player link"}</small></div><span className={`run-state ${link ? "active" : "archived"}`}>{link ? "Active" : "No link"}</span><div className="run-actions">{link ? <><button disabled={busy} onClick={() => copy(link.url)} type="button">Copy link</button><button className="danger-text" disabled={busy} onClick={() => revoke("player", link.token, `${member.name}'s player link`)} type="button">Revoke</button></> : <button disabled={busy} onClick={() => createPlayer(member.id)} type="button">Create link</button>}</div></div>; })}</div>}
+    {access && tab === "officers" && <div className="officer-access-view"><form className="officer-invite-form" onSubmit={createOfficer}><label>Officer name<input name="name" placeholder="Officer A" required /></label><label>Device label<input name="deviceLabel" placeholder="Desktop or laptop" /></label><button className="primary-button" disabled={busy} type="submit">Create one-time link</button></form><div className="access-emergency"><div><strong>Emergency control</strong><small>Your current device stays active so you do not lock yourself out.</small></div><button className="danger-outline" disabled={busy} onClick={() => revoke("all_other_officers")} type="button">Revoke all other officer access</button></div><div className="officer-list">{access.officers.map((officer) => <section className="officer-card" key={officer.id}><div className="officer-card-heading"><div><strong>{officer.name}</strong><small>{officer.sessions.length} active device{officer.sessions.length === 1 ? "" : "s"} · {officer.invites.length} pending link{officer.invites.length === 1 ? "" : "s"}</small></div>{officer.name !== access.currentOfficerName && <button className="danger-text" disabled={busy} onClick={() => revoke("officer", officer.id, `all ${officer.name} access`)} type="button">Revoke officer</button>}</div>{officer.sessions.map((session) => <div className="officer-session" key={session.id}><div><strong>{session.deviceLabel}</strong><small>Last used {formatDate(session.lastUsedAt)} · activated {formatDate(session.createdAt)}</small></div><span className="run-state active">{session.current ? "This device" : "Active"}</span>{!session.current && <button disabled={busy} onClick={() => revoke("session", session.id, `${officer.name} · ${session.deviceLabel}`)} type="button">Revoke device</button>}</div>)}{officer.invites.map((invite) => <div className="officer-session pending" key={invite.id}><div><strong>{invite.deviceLabel}</strong><small>Unused link · expires {formatDate(invite.expiresAt)}</small></div><span className="run-state archived">Pending</span><button disabled={busy} onClick={() => revoke("invite", invite.id, `${officer.name}'s unused link`)} type="button">Cancel link</button></div>)}{!officer.sessions.length && !officer.invites.length && <p className="detail-empty">No active devices or pending links.</p>}</section>)}</div></div>}
+  </article>;
+}
+
 function PlayerHistory({ history, linkedCharacters, activeKeys, loading, player }: { history: PlayerHistoryPoint[]; linkedCharacters: string[]; activeKeys: ScoreKey[]; loading: boolean; player: PlayerSnapshot }) {
   if (loading) return <section className="panel history-empty"><strong>Building {player.name}&apos;s season history…</strong></section>;
   if (!history.length) return <section className="panel history-empty"><strong>No raid-night history yet</strong><p>Import another night to start the week-over-week view.</p></section>;
@@ -97,6 +169,10 @@ function EventSpell({ event, fallbackIcon }: { event: RaidEvent; fallbackIcon?: 
   return <span className="event-spell"><SpellIcon icon={event.icon ?? fallbackIcon} name={event.ability} spellId={event.spellId} /><span aria-hidden="true" className={`event-status ${event.kind}`}>{event.kind === "warning" || event.kind === "death" ? "!" : "✓"}</span></span>;
 }
 
+function OfficerAccessLanding({ checking }: { checking: boolean }) {
+  return <main className="access-landing"><section><span className="brand-mark">SD</span><p className="eyebrow"><span /> Link access</p><h1>{checking ? "Checking this device…" : "This raid workspace is link-locked."}</h1><p>{checking ? "Your private officer session is being verified." : "Open a valid officer link to use the full workspace, or a player link to view one read-only player report."}</p>{!checking && <small>No raid data is available from the normal site address.</small>}</section></main>;
+}
+
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
   const [initialData, setInitialData] = useState(fallbackData);
   const [view, setView] = useState<View>("player");
@@ -127,6 +203,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [accessState, setAccessState] = useState<"checking" | "granted" | "denied">("checking");
+  const [officerName, setOfficerName] = useState("");
   const requestedIconSets = useRef(new Set<string>());
 
   function applyDashboard(nextData: DashboardData) {
@@ -142,6 +220,24 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
   useEffect(() => {
     let active = true;
+    async function checkAccess() {
+      try {
+        const response = await fetch("/api/access/session", { cache: "no-store" });
+        const result = await response.json() as { officer?: { name: string }; error?: string };
+        if (!active) return;
+        if (response.ok && result.officer) { setOfficerName(result.officer.name); setAccessState("granted"); }
+        else { setOfficerName(""); setAccessState("denied"); }
+      } catch { if (active) setAccessState("denied"); }
+    }
+    checkAccess();
+    const timer = window.setInterval(checkAccess, 60_000);
+    window.addEventListener("focus", checkAccess);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", checkAccess); };
+  }, []);
+
+  useEffect(() => {
+    if (accessState !== "granted") return;
+    let active = true;
     fetch("/api/dashboard")
       .then(async (response) => response.ok ? response.json() as Promise<{ data: DashboardData }> : null)
       .then((result) => {
@@ -154,18 +250,20 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       })
       .catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [accessState]);
 
   useEffect(() => {
+    if (accessState !== "granted") return;
     let active = true;
     fetch("/api/runs")
       .then(async (response) => response.ok ? response.json() as Promise<{ raidNights: RaidNightRecord[] }> : null)
       .then((result) => { if (active && result?.raidNights) setRunNights(result.raidNights); })
       .catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [accessState]);
 
   useEffect(() => {
+    if (accessState !== "granted") return;
     let active = true;
     fetch(`/api/history?playerId=${encodeURIComponent(playerId)}`)
       .then(async (response) => response.ok ? response.json() as Promise<{ history: PlayerHistoryPoint[]; linkedCharacters: string[] }> : null)
@@ -177,9 +275,10 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       .catch(() => { if (active) { setHistory([]); setLinkedCharacters([]); } })
       .finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
-  }, [historyRevision, playerId]);
+  }, [accessState, historyRevision, playerId]);
 
   useEffect(() => {
+    if (accessState !== "granted") return;
     const allEvents = [...initialData.events, ...Object.values(initialData.pullEvents ?? {}).flat()];
     const missingSpellIds = [...new Set([
       ...rules.filter((rule) => !rule.icon).map((rule) => rule.spellId),
@@ -210,7 +309,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       })
       .catch(() => undefined);
     return () => { active = false; };
-  }, [initialData.events, initialData.pullEvents, initialData.reportCode, rules]);
+  }, [accessState, initialData.events, initialData.pullEvents, initialData.reportCode, rules]);
 
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
@@ -495,6 +594,14 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     finally { setBusy(false); }
   }
 
+  async function signOutOfficerDevice() {
+    if (!window.confirm("Sign out and revoke officer access on this device?")) return;
+    await fetch("/api/access/session", { method: "DELETE" }).catch(() => undefined);
+    setOfficerName(""); setAccessState("denied");
+  }
+
+  if (accessState !== "granted") return <OfficerAccessLanding checking={accessState === "checking"} />;
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -504,7 +611,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <button className={view === "officer" ? "active" : ""} type="button" onClick={() => setView("officer")}>Officer view</button>
           <button className={view === "configure" ? "active" : ""} type="button" onClick={() => setView("configure")}>Configure</button>
         </nav>
-        <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={openNewImport}>Import logs</button><button className="avatar" type="button" aria-label="Open account menu">BR</button></div>
+        <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={openNewImport}>Import logs</button><button className="avatar" type="button" aria-label={`Sign out ${officerName} on this device`} onClick={signOutOfficerDevice} title={`${officerName} · sign out this device`}>{officerName.slice(0, 2).toUpperCase() || "OF"}</button></div>
       </header>
 
       {view === "player" && <section className="dashboard" id="dashboard">
@@ -577,11 +684,12 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
       {view === "configure" && <section className="dashboard config-view" id="configure">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Encounter configuration</p><button className="share-button" type="button" onClick={openNewImport}>Import reports</button></div>
-        <div className="section-hero"><div><h1>Set up the raid in a sensible order.</h1><p>Clean the roster before linking alternate characters. Raid nights and mechanic rules now stay in their own sections, so you only see the tools you need.</p></div><div className="engine-note"><span>Configuration</span><b>→</b><span>Analysis engine</span><b>→</b><span>Four scores</span></div></div>
+        <div className="section-hero"><div><h1>Set up the raid in a sensible order.</h1><p>Clean the roster, link alternate characters, maintain mechanics, and control every player or officer link without mixing the workflows together.</p></div><div className="engine-note"><span>Configuration</span><b>→</b><span>Analysis engine</span><b>→</b><span>Four scores</span></div></div>
         <div className="configure-tabs" role="tablist" aria-label="Configure sections">
           <button aria-controls="configure-raid-data" aria-selected={configureSection === "raid-data"} className={configureSection === "raid-data" ? "active" : ""} id="configure-raid-data-tab" onClick={() => setConfigureSection("raid-data")} role="tab" type="button"><span>Raid data</span><small>Nights & reports</small></button>
           <button aria-controls="configure-people" aria-selected={configureSection === "people"} className={configureSection === "people" ? "active" : ""} id="configure-people-tab" onClick={() => setConfigureSection("people")} role="tab" type="button"><span>Roster & alts</span><small>Clean roster, then link</small></button>
           <button aria-controls="configure-scoring" aria-selected={configureSection === "scoring"} className={configureSection === "scoring" ? "active" : ""} id="configure-scoring-tab" onClick={() => setConfigureSection("scoring")} role="tab" type="button"><span>Scoring & rules</span><small>Modules & mechanics</small></button>
+          <button aria-controls="configure-access" aria-selected={configureSection === "access"} className={configureSection === "access" ? "active" : ""} id="configure-access-tab" onClick={() => setConfigureSection("access")} role="tab" type="button"><span>Access</span><small>Players & officers</small></button>
         </div>
         {configureSection === "raid-data" && <div aria-labelledby="configure-raid-data-tab" className="configure-section" id="configure-raid-data" role="tabpanel"><RaidNightManager raidNights={runNights} busy={busy} status={runStatus} onToggle={updateRun} onDelete={deleteRun} onReplace={replaceReport} onAdd={addReportToNight} /></div>}
         {configureSection === "people" && <div aria-labelledby="configure-people-tab" className="configure-section" id="configure-people" role="tabpanel">
@@ -597,6 +705,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <form className="panel rule-form" key={editingRule?.id ?? "new-rule"} onSubmit={addRule}><p className="eyebrow"><span /> {editingRule ? editingRule.name.endsWith(" copy") ? "Duplicate mechanic rule" : "Edit mechanic rule" : "New mechanic rule"}</p><div className="rule-form-heading"><h2>{editingRule ? editingRule.name.endsWith(" copy") ? "Create a safe copy" : "Adjust this rule" : "Teach the analyzer"}</h2>{editingRule && <button onClick={() => { setEditingRule(null); setRuleStatus(""); }} type="button">Cancel</button>}</div><div className="form-pair"><label>Mechanic name<input defaultValue={editingRule?.name} name="name" placeholder="e.g. Gilded Wave" required /></label><label>Spell ID<input defaultValue={editingRule?.spellId} name="spellId" inputMode="numeric" placeholder="451117" required /></label></div><div className="form-pair"><label>Category<select name="category" defaultValue={editingRule?.category ?? "Avoidable damage"}><option>Avoidable damage</option><option>Mechanic failure</option><option>Interrupt</option><option>Dispel</option><option>Defensive</option><option>Soak</option><option>Utility</option></select></label><label>Event type<select name="eventType" defaultValue={editingRule?.eventType ?? "damage"}><option>damage</option><option>debuff</option><option>cast</option><option>interrupt</option><option>dispel</option><option>death</option></select></label></div><div className="form-pair"><label>Score effect<select name="scoringMode" defaultValue={editingRule ? scoringMode(editingRule) : "penalty"}><option value="penalty">Penalty · lowers Mechanics</option><option value="success">Success · evidence only</option><option value="context">Raid context · no player score</option></select></label><label>Penalty weight<input defaultValue={editingRule?.weight ?? 4} name="weight" inputMode="decimal" required /></label></div><div className="form-pair"><label>Severity<select name="severity" defaultValue={editingRule?.severity ?? "Medium"}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Maximum matches per pull<input defaultValue={editingRule?.condition.maxOccurrencesPerPull} name="maxOccurrencesPerPull" inputMode="numeric" placeholder="No limit" /></label></div><fieldset><legend>Applies on</legend>{["Normal", "Heroic", "Mythic"].map((difficulty) => <label key={difficulty}><input defaultChecked={editingRule ? editingRule.difficulties.includes(difficulty) : difficulty !== "Normal"} name="difficulty" type="checkbox" value={difficulty} /> {difficulty}</label>)}</fieldset><fieldset><legend>Roles</legend>{["Tank", "Healer", "DPS"].map((role) => <label key={role}><input defaultChecked={editingRule ? editingRule.roles.includes(role) : true} name="role" type="checkbox" value={role} /> {role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}</label>)}</fieldset><details><summary>Optional conditions</summary><label>Minimum amount<input defaultValue={editingRule?.condition.minAmount} name="minAmount" inputMode="numeric" placeholder="50000" /></label><label className="checkline"><input defaultChecked={editingRule?.condition.countOncePerCast} name="countOnce" type="checkbox" /> Count once per cast</label><label className="checkline"><input defaultChecked={editingRule?.condition.ignoreTanks} name="ignoreTanks" type="checkbox" /> Ignore tanks</label><label>Rule note<textarea defaultValue={editingRule?.condition.note} name="note" placeholder="Ignore the first unavoidable tick…" /></label></details><button className="primary-button" disabled={busy} type="submit">{editingRule ? editingRule.name.endsWith(" copy") ? "Save duplicate rule" : "Save rule changes" : "Save mechanic rule"}</button></form>
           </section>
         </div>}
+        {configureSection === "access" && <div aria-labelledby="configure-access-tab" className="configure-section" id="configure-access" role="tabpanel"><AccessManager members={rosterMembers} /></div>}
       </section>}
 
       {importOpen && <ImportModal

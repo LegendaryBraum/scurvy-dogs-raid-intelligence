@@ -1,46 +1,28 @@
 import { ensureSchema } from "../../../db/runtime";
-import { raidData } from "../../../lib/raid-data";
+import { getOfficerSession, officerRequiredResponse, randomAccessToken } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
-async function stablePlayerId(name: string, realm: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${name}|${realm}`.toLowerCase()));
-  return `player_${Array.from(new Uint8Array(digest)).slice(0, 10).map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
 export async function POST(request: Request) {
   try {
-    const payload = await request.json() as { playerId?: string; bossId?: string; pullId?: string };
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
+    const payload = await request.json() as { playerId?: string };
+    if (!payload.playerId) return Response.json({ error: "Choose a player before creating their link." }, { status: 400 });
     const db = await ensureSchema();
-    const storedPlayer = payload.playerId ? await db.prepare(`
+    const storedPlayer = await db.prepare(`
       SELECT p.id, COALESCE(prs.included, 1) AS included
       FROM players p LEFT JOIN player_roster_settings prs ON prs.player_id = p.id
       WHERE p.id = ?
-    `).bind(payload.playerId).first<{ id: string; included: number }>() : null;
-    if (storedPlayer && !storedPlayer.included) {
-      return Response.json({ error: "Ignored guests cannot receive player reports until they are restored to the roster." }, { status: 409 });
+    `).bind(payload.playerId).first<{ id: string; included: number }>();
+    if (!storedPlayer || !storedPlayer.included) return Response.json({ error: "Only active raiders can receive living player links." }, { status: 409 });
+    let link = await db.prepare("SELECT token FROM player_access_links WHERE player_id = ? AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1")
+      .bind(storedPlayer.id).first<{ token: string }>();
+    if (!link) {
+      link = { token: randomAccessToken() };
+      await db.prepare("INSERT INTO player_access_links (token, player_id) VALUES (?, ?)").bind(link.token, storedPlayer.id).run();
     }
-    if (storedPlayer && payload.pullId) {
-      const activePull = await db.prepare(`
-        SELECT pu.id FROM pulls pu
-        JOIN reports r ON r.id = pu.report_id
-        JOIN raid_nights rn ON rn.id = r.raid_night_id
-        WHERE pu.id = ? AND pu.included = 1 AND r.included = 1 AND rn.included = 1
-      `).bind(payload.pullId).first<{ id: string }>();
-      if (!activePull) return Response.json({ error: "That pull is excluded. Restore it from Raid Data before sharing a player view." }, { status: 409 });
-    }
-    const fallback = raidData.players.find((candidate) => candidate.id === payload.playerId) ?? raidData.players[0];
-    const playerId = storedPlayer?.id ?? await stablePlayerId(fallback.name, fallback.realm);
-    const token = crypto.randomUUID().replaceAll("-", "").slice(0, 20);
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    const statements = [];
-    if (!storedPlayer) statements.push(db.prepare("INSERT INTO players (id, name, realm, class_name, role) VALUES (?, ?, ?, ?, ?) ON CONFLICT(name, realm) DO UPDATE SET class_name = excluded.class_name, role = excluded.role")
-      .bind(playerId, fallback.name, fallback.realm, fallback.className, fallback.role));
-    statements.push(db.prepare("INSERT INTO shares (token, player_id, boss_id, pull_id, expires_at) VALUES (?, ?, ?, ?, ?)")
-      .bind(token, playerId, payload.bossId ?? null, payload.pullId ?? null, expiresAt));
-    await db.batch(statements);
-    return Response.json({ token, url: `/share/${token}`, expiresAt });
+    return Response.json({ token: link.token, url: `/share/${link.token}`, living: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Private view could not be created." }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : "Player access could not be created." }, { status: 500 });
   }
 }

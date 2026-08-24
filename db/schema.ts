@@ -60,6 +60,48 @@ export const scoreModuleSettings = sqliteTable("score_module_settings", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const accessSettings = sqliteTable("access_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const officers = sqliteTable("officers", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  revokedAt: text("revoked_at"),
+}, (table) => [index("idx_officers_name").on(table.name)]);
+
+export const officerInvites = sqliteTable("officer_invites", {
+  id: text("id").primaryKey(),
+  officerId: text("officer_id").notNull().references(() => officers.id),
+  deviceLabel: text("device_label").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  expiresAt: text("expires_at").notNull(),
+  consumedAt: text("consumed_at"),
+  revokedAt: text("revoked_at"),
+}, (table) => [uniqueIndex("idx_officer_invites_token").on(table.tokenHash), index("idx_officer_invites_officer").on(table.officerId)]);
+
+export const officerSessions = sqliteTable("officer_sessions", {
+  id: text("id").primaryKey(),
+  officerId: text("officer_id").notNull().references(() => officers.id),
+  deviceLabel: text("device_label").notNull(),
+  tokenHash: text("token_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastUsedAt: text("last_used_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  revokedAt: text("revoked_at"),
+}, (table) => [uniqueIndex("idx_officer_sessions_token").on(table.tokenHash), index("idx_officer_sessions_officer").on(table.officerId)]);
+
+export const playerAccessLinks = sqliteTable("player_access_links", {
+  token: text("token").primaryKey(),
+  playerId: text("player_id").notNull().references(() => players.id),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  lastUsedAt: text("last_used_at"),
+  revokedAt: text("revoked_at"),
+}, (table) => [index("idx_player_access_links_player").on(table.playerId, table.revokedAt)]);
+
 export const pullPlayers = sqliteTable("pull_players", {
   id: text("id").primaryKey(), pullId: text("pull_id").notNull().references(() => pulls.id),
   playerId: text("player_id").notNull().references(() => players.id), spec: text("spec").notNull().default("Unknown"),

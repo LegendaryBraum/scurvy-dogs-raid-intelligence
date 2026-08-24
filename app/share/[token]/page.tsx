@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { raidData } from "../../../lib/raid-data";
 import { getSharedPlayer } from "../../../lib/share";
 import type { ScoreKey } from "../../../lib/types";
 
 type Props = { params: Promise<{ token: string }> };
+export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
@@ -23,14 +23,14 @@ export default async function SharedPlayerPage({ params }: Props) {
   const { token } = await params;
   const player = await getSharedPlayer(token);
   if (!player) notFound();
-  const enabledModules = player.enabledModules ?? raidData.moduleSettings;
+  const enabledModules = player.enabledModules ?? { mechanics: true, performance: true, attendance: true, preparation: false };
   const scores = ([
     ["mechanics", "Mechanics", player.scores.mechanics, "Configured mechanics"], ["performance", "Performance", player.scores.performance, player.parse === null ? "Not available" : `${player.parse}th percentile`],
     ["attendance", "Attendance", player.scores.attendance, player.attendanceLabel], ["preparation", "Preparation", player.scores.preparation, player.prepLabel],
   ] as const).filter(([key]) => enabledModules[key]);
   const comparisonKey = (["mechanics", "performance", "attendance", "preparation"] as ScoreKey[]).find((key) => enabledModules[key] && player.scores[key] !== null);
   const comparisonLabel = comparisonKey ? comparisonKey[0].toUpperCase() + comparisonKey.slice(1) : "Score";
-  const comparisonAverage = comparisonKey ? (player.raidAverages?.[comparisonKey] ?? raidData.raidAverages[comparisonKey]) : null;
+  const comparisonAverage = comparisonKey ? (player.raidAverages?.[comparisonKey] ?? null) : null;
   const comparisonScore = comparisonKey ? player.scores[comparisonKey] : null;
   return (
     <main className="private-shell">
@@ -39,7 +39,7 @@ export default async function SharedPlayerPage({ params }: Props) {
         <span className="privacy-badge">Player-only view</span>
       </header>
       <section className="private-report">
-        <p className="eyebrow"><span /> {raidData.raidNight}</p>
+        <p className="eyebrow"><span /> {player.raidNightLabel ?? "Latest included raid night"}</p>
         <div className="private-hero">
           <div><h1>{player.name}&apos;s raid review</h1><p>{player.summary}</p></div>
           <div className="player-seal"><strong>{player.name.slice(0, 2).toUpperCase()}</strong><span>{player.spec}<br />{player.className}</span></div>

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 
-type ScurvyEnv = typeof env & { DB?: D1Database; WCL_CLIENT_ID?: string; WCL_CLIENT_SECRET?: string };
+type ScurvyEnv = typeof env & { DB?: D1Database; WCL_CLIENT_ID?: string; WCL_CLIENT_SECRET?: string; OFFICER_BOOTSTRAP_KEY?: string };
 let schemaReady = false;
 
 export function getRuntimeEnv() { return env as ScurvyEnv; }
@@ -23,6 +23,11 @@ export async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS player_roster_settings (player_id TEXT PRIMARY KEY REFERENCES players(id), included INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS player_identities (player_id TEXT PRIMARY KEY REFERENCES players(id), identity_id TEXT NOT NULL REFERENCES players(id), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS score_module_settings (module_key TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS access_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+    `CREATE TABLE IF NOT EXISTS officers (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, revoked_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS officer_invites (id TEXT PRIMARY KEY, officer_id TEXT NOT NULL REFERENCES officers(id), device_label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, consumed_at TEXT, revoked_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS officer_sessions (id TEXT PRIMARY KEY, officer_id TEXT NOT NULL REFERENCES officers(id), device_label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, revoked_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS player_access_links (token TEXT PRIMARY KEY, player_id TEXT NOT NULL REFERENCES players(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT, revoked_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS pull_players (id TEXT PRIMARY KEY, pull_id TEXT NOT NULL REFERENCES pulls(id), player_id TEXT NOT NULL REFERENCES players(id), spec TEXT NOT NULL DEFAULT 'Unknown', dps REAL NOT NULL DEFAULT 0, hps REAL NOT NULL DEFAULT 0, parse REAL NOT NULL DEFAULT 0, ilvl_parse REAL NOT NULL DEFAULT 0, deaths INTEGER NOT NULL DEFAULT 0, mechanics_score REAL NOT NULL DEFAULT 100, performance_score REAL NOT NULL DEFAULT 0, attendance_score REAL NOT NULL DEFAULT 100, preparation_score REAL NOT NULL DEFAULT 100, UNIQUE(pull_id, player_id))`,
     `CREATE TABLE IF NOT EXISTS mechanic_rules (id TEXT PRIMARY KEY, boss_id TEXT NOT NULL REFERENCES bosses(id), spell_id INTEGER NOT NULL, name TEXT NOT NULL, icon TEXT, category TEXT NOT NULL, severity TEXT NOT NULL, weight REAL NOT NULL, event_type TEXT NOT NULL, difficulties_json TEXT NOT NULL DEFAULT '[]', roles_json TEXT NOT NULL DEFAULT '[]', condition_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, pull_id TEXT NOT NULL REFERENCES pulls(id), player_id TEXT REFERENCES players(id), rule_id TEXT REFERENCES mechanic_rules(id), spell_id INTEGER NOT NULL, event_type TEXT NOT NULL, timestamp INTEGER NOT NULL, amount REAL, outcome TEXT NOT NULL DEFAULT 'observed', details_json TEXT NOT NULL DEFAULT '{}')`,
@@ -34,6 +39,10 @@ export async function ensureSchema() {
     `CREATE INDEX IF NOT EXISTS idx_pull_players_player ON pull_players(player_id)`,
     `CREATE INDEX IF NOT EXISTS idx_player_roster_settings_included ON player_roster_settings(included)`,
     `CREATE INDEX IF NOT EXISTS idx_player_identities_identity ON player_identities(identity_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_officers_name ON officers(name)`,
+    `CREATE INDEX IF NOT EXISTS idx_officer_invites_officer ON officer_invites(officer_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_officer_sessions_officer ON officer_sessions(officer_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_player_access_links_player ON player_access_links(player_id, revoked_at)`,
     `CREATE INDEX IF NOT EXISTS idx_mechanic_rules_boss_enabled ON mechanic_rules(boss_id, enabled)`,
     `CREATE INDEX IF NOT EXISTS idx_mechanic_rules_spell ON mechanic_rules(spell_id)`,
     `CREATE INDEX IF NOT EXISTS idx_events_pull_player ON events(pull_id, player_id)`,

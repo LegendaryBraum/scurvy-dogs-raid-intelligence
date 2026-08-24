@@ -1,13 +1,15 @@
 import { ensureSchema } from "../../../db/runtime";
 import type { ModuleSettings, ScoreKey } from "../../../lib/types";
+import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
 
 const defaults: ModuleSettings = { mechanics: true, performance: true, attendance: false, preparation: false };
 const moduleKeys = Object.keys(defaults) as ScoreKey[];
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const db = await ensureSchema();
     const rows = await db.prepare("SELECT module_key, enabled FROM score_module_settings").all<{ module_key: string; enabled: number }>();
     const settings = { ...defaults };
@@ -22,6 +24,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    if (!await getOfficerSession(request)) return officerRequiredResponse();
     const payload = await request.json() as { key?: ScoreKey; enabled?: boolean };
     if (!payload.key || !moduleKeys.includes(payload.key) || typeof payload.enabled !== "boolean") {
       return Response.json({ error: "Choose a valid score module and active or paused state." }, { status: 400 });
