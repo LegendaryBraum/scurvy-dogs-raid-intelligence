@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
+import { loadPrivatePlayerWorkspace } from "../../../lib/player-access-data";
 import { getSharedPlayer } from "../../../lib/share";
-import type { ScoreKey } from "../../../lib/types";
+import { PrivatePlayerDashboard } from "./PrivatePlayerDashboard";
 
 type Props = { params: Promise<{ token: string }> };
 export const dynamic = "force-dynamic";
@@ -11,52 +11,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
   const player = await getSharedPlayer(token);
   if (!player) return { title: "Private report unavailable", robots: { index: false, follow: false } };
-  const description = `${player.name}'s private raid review: mechanics, performance, attendance, preparation, and focused takeaways.`;
+  const description = `${player.name}'s complete private raid dashboard: every pull, boss, mechanic, Spell ID, performance result, and raid-night trend.`;
   return {
-    title: `${player.name} · Private raid review`, description, robots: { index: false, follow: false },
-    openGraph: { title: `${player.name} · Private raid review`, description, images: [] },
-    twitter: { card: "summary", title: `${player.name} · Private raid review`, description, images: [] },
+    title: `${player.name} · Private raid dashboard`, description, robots: { index: false, follow: false },
+    openGraph: { title: `${player.name} · Private raid dashboard`, description, images: [] },
+    twitter: { card: "summary", title: `${player.name} · Private raid dashboard`, description, images: [] },
   };
 }
 
 export default async function SharedPlayerPage({ params }: Props) {
   const { token } = await params;
-  const player = await getSharedPlayer(token);
-  if (!player) notFound();
-  const enabledModules = player.enabledModules ?? { mechanics: true, performance: true, attendance: true, preparation: false };
-  const scores = ([
-    ["mechanics", "Mechanics", player.scores.mechanics, "Configured mechanics"], ["performance", "Performance", player.scores.performance, player.parse === null ? "Not available" : `${player.parse}th percentile`],
-    ["attendance", "Attendance", player.scores.attendance, player.attendanceLabel], ["preparation", "Preparation", player.scores.preparation, player.prepLabel],
-  ] as const).filter(([key]) => enabledModules[key]);
-  const comparisonKey = (["mechanics", "performance", "attendance", "preparation"] as ScoreKey[]).find((key) => enabledModules[key] && player.scores[key] !== null);
-  const comparisonLabel = comparisonKey ? comparisonKey[0].toUpperCase() + comparisonKey.slice(1) : "Score";
-  const comparisonAverage = comparisonKey ? (player.raidAverages?.[comparisonKey] ?? null) : null;
-  const comparisonScore = comparisonKey ? player.scores[comparisonKey] : null;
-  return (
-    <main className="private-shell">
-      <header className="private-topbar">
-        <Link className="brand" href="/" aria-label="Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Private player review</small></span></Link>
-        <span className="privacy-badge">Player-only view</span>
-      </header>
-      <section className="private-report">
-        <p className="eyebrow"><span /> {player.raidNightLabel ?? "Latest included raid night"}</p>
-        <div className="private-hero">
-          <div><h1>{player.name}&apos;s raid review</h1><p>{player.summary}</p></div>
-          <div className="player-seal"><strong>{player.name.slice(0, 2).toUpperCase()}</strong><span>{player.spec}<br />{player.className}</span></div>
-        </div>
-        <section className={`score-grid score-grid-${scores.length} private-scores`} aria-label={`${player.name}'s scores`}>
-          {scores.map(([key, label, value, note]) => { const index = (["mechanics", "performance", "attendance", "preparation"] as ScoreKey[]).indexOf(key); return <article className={`score-card tone-${index} ${value === null ? "score-unavailable" : ""}`} key={label}><div className="score-heading"><span>{label}</span><small>{note}</small></div><div className="score-value">{value ?? "N/A"}{value !== null && <span>/100</span>}</div><div className="score-track"><i style={{ width: `${value ?? 0}%` }} /></div></article>; })}
-        </section>
-        {enabledModules.mechanics && <section className="private-insights">
-          <article className="panel"><p className="eyebrow"><span /> What went well</p><h2>Keep doing this</h2><ul className="plain-findings">{player.wins.map((win) => <li key={win}><span>✓</span>{win}</li>)}</ul></article>
-          <article className="panel"><p className="eyebrow amber"><span /> Best next step</p><h2>Focus here</h2><ul className="plain-findings focus">{player.focus.map((item) => <li key={item}><span>!</span>{item}</li>)}</ul></article>
-        </section>}
-        <section className="anonymous-context panel">
-          <div><p className="eyebrow muted"><span /> Anonymous context</p><h2>How this compares</h2><p>Only raid averages are shown. No other player names or individual reports are included.</p></div>
-          <div className="average-comparison"><span>Your {comparisonLabel} <strong>{comparisonScore ?? "N/A"}</strong></span><i><b style={{ width: `${comparisonScore ?? 0}%` }} /></i><span>Raid average <strong>{comparisonAverage ?? "N/A"}</strong></span><i className="average"><b style={{ width: `${comparisonAverage ?? 0}%` }} /></i></div>
-        </section>
-        <footer className="private-footer">This link contains only {player.name}&apos;s detail and anonymous raid context.</footer>
-      </section>
-    </main>
-  );
+  const workspace = await loadPrivatePlayerWorkspace(token);
+  if (!workspace) notFound();
+  return <PrivatePlayerDashboard initialWorkspace={workspace} token={token} />;
 }

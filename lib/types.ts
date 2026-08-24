@@ -173,3 +173,12 @@ export type DashboardData = {
   preparationSummary?: string;
   preparationRaid?: { flasks: number | null; food: number | null; total: number | null };
 };
+
+export type PrivatePlayerWorkspace = {
+  playerId: string;
+  playerName: string;
+  linkedCharacters: string[];
+  dashboard: DashboardData;
+  history: PlayerHistoryPoint[];
+  pullRaidAverages: Record<string, Record<ScoreKey, ScoreValue>>;
+};
