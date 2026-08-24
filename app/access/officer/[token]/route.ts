@@ -40,7 +40,7 @@ export async function POST(request: Request, context: { params: Promise<{ token:
     const db = await ensureSchema();
     const invite = await db.prepare(`
       UPDATE officer_invites
-      SET consumed_at = CURRENT_TIMESTAMP
+      SET consumed_at = CURRENT_TIMESTAMP, token = NULL
       WHERE token_hash = ? AND consumed_at IS NULL AND revoked_at IS NULL AND unixepoch(expires_at) > unixepoch('now')
         AND officer_id IN (SELECT id FROM officers WHERE revoked_at IS NULL)
       RETURNING officer_id, device_label

@@ -6,7 +6,7 @@ export const runtime = "edge";
 
 type OfficerRow = { id: string; name: string };
 type SessionRow = { id: string; officer_id: string; device_label: string; created_at: string; last_used_at: string };
-type InviteRow = { id: string; officer_id: string; device_label: string; created_at: string; expires_at: string };
+type InviteRow = { id: string; officer_id: string; device_label: string; token: string | null; created_at: string; expires_at: string };
 type PlayerLinkRow = { token: string; player_id: string; player_name: string; created_at: string; last_used_at: string | null };
 
 async function readWorkspace(request: Request, session: OfficerSession): Promise<AccessWorkspace> {
@@ -14,7 +14,7 @@ async function readWorkspace(request: Request, session: OfficerSession): Promise
   const [officerResult, sessionResult, inviteResult, playerResult] = await Promise.all([
     db.prepare("SELECT id, name FROM officers WHERE revoked_at IS NULL ORDER BY lower(name)").all<OfficerRow>(),
     db.prepare("SELECT id, officer_id, device_label, created_at, last_used_at FROM officer_sessions WHERE revoked_at IS NULL ORDER BY last_used_at DESC").all<SessionRow>(),
-    db.prepare("SELECT id, officer_id, device_label, created_at, expires_at FROM officer_invites WHERE consumed_at IS NULL AND revoked_at IS NULL AND unixepoch(expires_at) > unixepoch('now') ORDER BY created_at DESC").all<InviteRow>(),
+    db.prepare("SELECT id, officer_id, device_label, token, created_at, expires_at FROM officer_invites WHERE consumed_at IS NULL AND revoked_at IS NULL AND unixepoch(expires_at) > unixepoch('now') ORDER BY created_at DESC").all<InviteRow>(),
     db.prepare(`
       SELECT pal.token, pal.player_id, p.name AS player_name, pal.created_at, pal.last_used_at
       FROM player_access_links pal
@@ -28,7 +28,7 @@ async function readWorkspace(request: Request, session: OfficerSession): Promise
     id: officer.id,
     name: officer.name,
     sessions: sessionResult.results.filter((candidate) => candidate.officer_id === officer.id).map((candidate) => ({ id: candidate.id, deviceLabel: candidate.device_label, createdAt: candidate.created_at, lastUsedAt: candidate.last_used_at, current: candidate.id === session.id })),
-    invites: inviteResult.results.filter((candidate) => candidate.officer_id === officer.id).map((candidate) => ({ id: candidate.id, deviceLabel: candidate.device_label, createdAt: candidate.created_at, expiresAt: candidate.expires_at })),
+    invites: inviteResult.results.filter((candidate) => candidate.officer_id === officer.id).map((candidate) => ({ id: candidate.id, deviceLabel: candidate.device_label, createdAt: candidate.created_at, expiresAt: candidate.expires_at, url: candidate.token ? new URL(`/access/officer/${candidate.token}`, request.url).toString() : null })),
   }));
   return {
     currentSessionId: session.id,
@@ -63,11 +63,11 @@ export async function POST(request: Request) {
         officer = { id: makeId("officer") };
         await db.prepare("INSERT INTO officers (id, name) VALUES (?, ?)").bind(officer.id, name).run();
       }
-      await db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP WHERE officer_id = ? AND lower(device_label) = lower(?) AND consumed_at IS NULL AND revoked_at IS NULL").bind(officer.id, deviceLabel).run();
+      await db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE officer_id = ? AND lower(device_label) = lower(?) AND consumed_at IS NULL AND revoked_at IS NULL").bind(officer.id, deviceLabel).run();
       const token = randomAccessToken();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-      await db.prepare("INSERT INTO officer_invites (id, officer_id, device_label, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)")
-        .bind(makeId("invite"), officer.id, deviceLabel, await hashAccessToken(token), expiresAt).run();
+      await db.prepare("INSERT INTO officer_invites (id, officer_id, device_label, token_hash, token, expires_at) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(makeId("invite"), officer.id, deviceLabel, await hashAccessToken(token), token, expiresAt).run();
       return Response.json({ url: new URL(`/access/officer/${token}`, request.url).toString(), expiresAt, access: await readWorkspace(request, session) }, { headers: { "Cache-Control": "no-store" } });
     }
     if (payload.kind === "player") {
@@ -97,18 +97,18 @@ export async function PATCH(request: Request) {
     else if (payload.kind === "session" && payload.id) {
       if (payload.id === session.id) return Response.json({ error: "Use Sign out this device from the header instead of revoking your current session here." }, { status: 409 });
       await db.prepare("UPDATE officer_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(payload.id).run();
-    } else if (payload.kind === "invite" && payload.id) await db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(payload.id).run();
+    } else if (payload.kind === "invite" && payload.id) await db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE id = ?").bind(payload.id).run();
     else if (payload.kind === "officer" && payload.id) {
       if (payload.id === session.officerId) return Response.json({ error: "Your own officer identity cannot be revoked while you are using it." }, { status: 409 });
       await db.batch([
         db.prepare("UPDATE officers SET revoked_at = CURRENT_TIMESTAMP WHERE id = ?").bind(payload.id),
         db.prepare("UPDATE officer_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE officer_id = ?").bind(payload.id),
-        db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP WHERE officer_id = ?").bind(payload.id),
+        db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE officer_id = ?").bind(payload.id),
       ]);
     } else if (payload.kind === "all_other_officers") {
       await db.batch([
         db.prepare("UPDATE officer_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id != ? AND revoked_at IS NULL").bind(session.id),
-        db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP WHERE consumed_at IS NULL AND revoked_at IS NULL"),
+        db.prepare("UPDATE officer_invites SET revoked_at = CURRENT_TIMESTAMP, token = NULL WHERE consumed_at IS NULL AND revoked_at IS NULL"),
       ]);
     } else return Response.json({ error: "Choose an access record to revoke." }, { status: 400 });
     return Response.json({ revoked: true, access: await readWorkspace(request, session) }, { headers: { "Cache-Control": "no-store" } });

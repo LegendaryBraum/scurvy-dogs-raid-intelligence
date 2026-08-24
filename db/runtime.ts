@@ -25,7 +25,7 @@ export async function ensureSchema() {
     `CREATE TABLE IF NOT EXISTS score_module_settings (module_key TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS access_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
     `CREATE TABLE IF NOT EXISTS officers (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, revoked_at TEXT)`,
-    `CREATE TABLE IF NOT EXISTS officer_invites (id TEXT PRIMARY KEY, officer_id TEXT NOT NULL REFERENCES officers(id), device_label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, consumed_at TEXT, revoked_at TEXT)`,
+    `CREATE TABLE IF NOT EXISTS officer_invites (id TEXT PRIMARY KEY, officer_id TEXT NOT NULL REFERENCES officers(id), device_label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, token TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, consumed_at TEXT, revoked_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS officer_sessions (id TEXT PRIMARY KEY, officer_id TEXT NOT NULL REFERENCES officers(id), device_label TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, revoked_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS player_access_links (token TEXT PRIMARY KEY, player_id TEXT NOT NULL REFERENCES players(id), created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at TEXT, revoked_at TEXT)`,
     `CREATE TABLE IF NOT EXISTS pull_players (id TEXT PRIMARY KEY, pull_id TEXT NOT NULL REFERENCES pulls(id), player_id TEXT NOT NULL REFERENCES players(id), spec TEXT NOT NULL DEFAULT 'Unknown', dps REAL NOT NULL DEFAULT 0, hps REAL NOT NULL DEFAULT 0, parse REAL NOT NULL DEFAULT 0, ilvl_parse REAL NOT NULL DEFAULT 0, deaths INTEGER NOT NULL DEFAULT 0, mechanics_score REAL NOT NULL DEFAULT 100, performance_score REAL NOT NULL DEFAULT 0, attendance_score REAL NOT NULL DEFAULT 100, preparation_score REAL NOT NULL DEFAULT 100, UNIQUE(pull_id, player_id))`,
@@ -56,6 +56,8 @@ export async function ensureSchema() {
     `PRAGMA optimize`,
   ];
   await db.batch(statements.map((statement) => db.prepare(statement)));
+  const inviteColumns = await db.prepare("PRAGMA table_info(officer_invites)").all<{ name: string }>();
+  if (!inviteColumns.results.some((column) => column.name === "token")) await db.prepare("ALTER TABLE officer_invites ADD COLUMN token TEXT").run();
   schemaReady = true;
   return db;
 }

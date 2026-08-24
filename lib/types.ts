@@ -93,7 +93,7 @@ export type OfficerAccessRecord = {
   id: string;
   name: string;
   sessions: Array<{ id: string; deviceLabel: string; createdAt: string; lastUsedAt: string; current: boolean }>;
-  invites: Array<{ id: string; deviceLabel: string; createdAt: string; expiresAt: string }>;
+  invites: Array<{ id: string; deviceLabel: string; createdAt: string; expiresAt: string; url: string | null }>;
 };
 
 export type PlayerAccessRecord = {

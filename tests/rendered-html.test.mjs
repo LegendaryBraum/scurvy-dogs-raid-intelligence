@@ -72,6 +72,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Revoke all other officer access/);
   assert.match(app, /Create one-time link/);
   assert.match(app, /Reusable player link/);
+  assert.match(app, /Pending officer link/);
   assert.ok(app.indexOf("<RosterManager members") < app.indexOf("<IdentityManager members"));
   assert.match(app, /Night-by-night/);
   assert.match(app, /Replace \/ reimport/);
@@ -128,6 +129,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(accessManage, /officer_sessions/);
   assert.match(accessManage, /all_other_officers/);
   assert.match(accessManage, /currentSessionId/);
+  assert.match(accessManage, /candidate\.token \? new URL/);
+  assert.match(accessManage, /token = NULL/);
   assert.match(accessSession, /clearOfficerSessionCookie/);
   assert.match(officerAccess, /HttpOnly; Secure; SameSite=Lax/);
   assert.match(ownerAccess, /OFFICER_BOOTSTRAP_KEY/);
@@ -141,6 +144,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(accessMigration, /CREATE TABLE `officer_invites`/);
   assert.match(accessMigration, /CREATE TABLE `officer_sessions`/);
   assert.match(accessMigration, /CREATE TABLE `player_access_links`/);
+  assert.match(await readFile(new URL("../drizzle/0007_nosy_flatman.sql", import.meta.url), "utf8"), /ADD `token` text/);
   assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
   for (const privateRoute of [importer, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);

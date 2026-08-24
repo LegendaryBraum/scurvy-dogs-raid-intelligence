@@ -1,0 +1,1 @@
+ALTER TABLE `officer_invites` ADD `token` text;

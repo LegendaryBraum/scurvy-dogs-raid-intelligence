@@ -78,6 +78,7 @@ export const officerInvites = sqliteTable("officer_invites", {
   officerId: text("officer_id").notNull().references(() => officers.id),
   deviceLabel: text("device_label").notNull(),
   tokenHash: text("token_hash").notNull(),
+  token: text("token"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   expiresAt: text("expires_at").notNull(),
   consumedAt: text("consumed_at"),
