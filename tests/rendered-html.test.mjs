@@ -71,6 +71,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Players & officers/);
   assert.match(app, /Revoke all other officer access/);
   assert.match(app, /Create one-time link/);
+  assert.match(app, /Reusable player link/);
   assert.ok(app.indexOf("<RosterManager members") < app.indexOf("<IdentityManager members"));
   assert.match(app, /Night-by-night/);
   assert.match(app, /Replace \/ reimport/);
