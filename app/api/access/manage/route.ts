@@ -14,7 +14,7 @@ async function readWorkspace(request: Request, session: OfficerSession): Promise
   const [officerResult, sessionResult, inviteResult, playerResult] = await Promise.all([
     db.prepare("SELECT id, name FROM officers WHERE revoked_at IS NULL ORDER BY lower(name)").all<OfficerRow>(),
     db.prepare("SELECT id, officer_id, device_label, created_at, last_used_at FROM officer_sessions WHERE revoked_at IS NULL ORDER BY last_used_at DESC").all<SessionRow>(),
-    db.prepare("SELECT id, officer_id, device_label, created_at, expires_at FROM officer_invites WHERE consumed_at IS NULL AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP ORDER BY created_at DESC").all<InviteRow>(),
+    db.prepare("SELECT id, officer_id, device_label, created_at, expires_at FROM officer_invites WHERE consumed_at IS NULL AND revoked_at IS NULL AND unixepoch(expires_at) > unixepoch('now') ORDER BY created_at DESC").all<InviteRow>(),
     db.prepare(`
       SELECT pal.token, pal.player_id, p.name AS player_name, pal.created_at, pal.last_used_at
       FROM player_access_links pal

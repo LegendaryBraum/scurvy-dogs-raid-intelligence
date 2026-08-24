@@ -131,6 +131,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(officerAccess, /HttpOnly; Secure; SameSite=Lax/);
   assert.match(ownerAccess, /OFFICER_BOOTSTRAP_KEY/);
   assert.match(ownerAccess, /owner_bootstrap_hash/);
+  assert.match(await readFile(new URL("../app/access/officer/[token]/route.ts", import.meta.url), "utf8"), /Activate officer access/);
+  assert.match(await readFile(new URL("../app/access/officer/[token]/route.ts", import.meta.url), "utf8"), /export async function POST/);
   assert.match(shareApi, /player_access_links/);
   assert.match(shareApi, /living: true/);
   assert.match(accessMigration, /CREATE TABLE `access_settings`/);
