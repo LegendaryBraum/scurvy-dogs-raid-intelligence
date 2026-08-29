@@ -278,7 +278,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }, [accessState, historyRevision, playerId]);
 
   useEffect(() => {
-    if (accessState !== "granted") return;
+    if (accessState !== "granted" || view !== "configure" || configureSection !== "scoring") return;
     const allEvents = [...initialData.events, ...Object.values(initialData.pullEvents ?? {}).flat()];
     const missingSpellIds = [...new Set([
       ...rules.filter((rule) => !rule.icon).map((rule) => rule.spellId),
@@ -309,7 +309,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       })
       .catch(() => undefined);
     return () => { active = false; };
-  }, [accessState, initialData.events, initialData.pullEvents, initialData.reportCode, rules]);
+  }, [accessState, configureSection, initialData.events, initialData.pullEvents, initialData.reportCode, rules, view]);
 
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);

@@ -87,7 +87,11 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(warcraftLogs, /abilities \{ gameID name icon \}/);
   assert.match(importer, /fetchRuleEvents/);
   assert.match(reanalyzer, /resetExisting: true/);
-  assert.match(warcraftLogs, /response\.status === 429/);
+  assert.match(warcraftLogs, /WarcraftLogsRateLimitError/);
+  assert.match(warcraftLogs, /hourly API allowance is temporarily full/);
+  assert.match(spellIcons, /fetchReportAbilities/);
+  assert.doesNotMatch(spellIcons, /fetchReportOverview/);
+  assert.match(importer, /status: 429/);
   assert.match(importer, /selectedFightIds\.has\(fight\.id\)/);
   assert.match(importer, /replaceReportCodes/);
   assert.match(importer, /raidNightId/);
@@ -109,7 +113,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(schema, /included: integer\("included"/);
   assert.match(modules, /score_module_settings/);
   assert.match(config, /export async function PATCH/);
-  assert.match(spellIcons, /fetchReportOverview/);
+  assert.match(spellIcons, /fetchReportAbilities/);
   assert.match(spellIcons, /UPDATE mechanic_rules SET icon/);
   assert.match(runs, /export async function DELETE/);
   assert.match(runs, /included = \?/);

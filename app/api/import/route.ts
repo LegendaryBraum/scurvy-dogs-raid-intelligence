@@ -7,6 +7,7 @@ import {
   fetchReportPreview,
   parseRankingRows,
   parseReportUrls,
+  WarcraftLogsRateLimitError,
 } from "../../../lib/warcraft-logs";
 import { analyzeFightRules, type StoredRule } from "../../../lib/rule-analysis";
 import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
@@ -266,6 +267,14 @@ export async function POST(request: Request) {
       liveApiConfigured: true,
     });
   } catch (error) {
+    if (error instanceof WarcraftLogsRateLimitError) {
+      const headers = error.retryAfterSeconds ? { "Retry-After": String(error.retryAfterSeconds) } : undefined;
+      return Response.json({
+        error: error.message,
+        rateLimited: true,
+        retryAfterSeconds: error.retryAfterSeconds,
+      }, { status: 429, headers });
+    }
     return Response.json({ error: error instanceof Error ? error.message : "The reports could not be imported." }, { status: 500 });
   }
 }

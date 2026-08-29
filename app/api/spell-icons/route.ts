@@ -1,5 +1,5 @@
 import { ensureSchema, getRuntimeEnv } from "../../../db/runtime";
-import { fetchReportOverview } from "../../../lib/warcraft-logs";
+import { fetchReportAbilities, WarcraftLogsRateLimitError } from "../../../lib/warcraft-logs";
 import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
 
 export const runtime = "edge";
@@ -18,12 +18,12 @@ export async function POST(request: Request) {
       return Response.json({ error: "The Warcraft Logs connection is not available." }, { status: 503 });
     }
 
-    const { report } = await fetchReportOverview(payload.reportCode, {
+    const abilities = await fetchReportAbilities(payload.reportCode, {
       clientId: runtimeEnv.WCL_CLIENT_ID,
       clientSecret: runtimeEnv.WCL_CLIENT_SECRET,
     });
     const requested = new Set(spellIds);
-    const icons = Object.fromEntries((report.masterData?.abilities ?? [])
+    const icons = Object.fromEntries(abilities
       .filter((ability): ability is typeof ability & { icon: string } => requested.has(ability.gameID) && Boolean(ability.icon))
       .map((ability) => [String(ability.gameID), ability.icon]));
 
@@ -33,6 +33,10 @@ export async function POST(request: Request) {
 
     return Response.json({ icons, found: updates.length, requested: spellIds.length });
   } catch (error) {
+    if (error instanceof WarcraftLogsRateLimitError) {
+      const headers = error.retryAfterSeconds ? { "Retry-After": String(error.retryAfterSeconds) } : undefined;
+      return Response.json({ error: error.message, rateLimited: true }, { status: 429, headers });
+    }
     return Response.json({ error: error instanceof Error ? error.message : "Spell artwork could not be loaded." }, { status: 500 });
   }
 }

@@ -67,6 +67,19 @@ export type WclRankingRow = {
   amount: number | null;
 };
 
+export class WarcraftLogsRateLimitError extends Error {
+  readonly retryAfterSeconds?: number;
+
+  constructor(retryAfterSeconds?: number) {
+    const wait = retryAfterSeconds && retryAfterSeconds > 0
+      ? ` Try again in about ${retryAfterSeconds >= 120 ? `${Math.ceil(retryAfterSeconds / 60)} minutes` : `${retryAfterSeconds} seconds`}.`
+      : " The allowance refreshes automatically; try again in a little while.";
+    super(`Warcraft Logs' hourly API allowance is temporarily full.${wait} Your report link is valid and no raid data was changed.`);
+    this.name = "WarcraftLogsRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 const REPORT_PATTERN = /(?:warcraftlogs\.com\/reports\/|^)([A-Za-z0-9]{8,24})(?:[/?#]|$)/i;
 const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
 
@@ -102,7 +115,10 @@ export function parseReportUrls(input: string | string[]) {
   return { reports, invalid };
 }
 
+let cachedToken: { clientId: string; value: string; expiresAt: number } | null = null;
+
 async function getAccessToken(credentials: WarcraftLogsCredentials) {
+  if (cachedToken?.clientId === credentials.clientId && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.value;
   const auth = btoa(`${credentials.clientId}:${credentials.clientSecret}`);
   const response = await fetch("https://www.warcraftlogs.com/oauth/token", {
     method: "POST",
@@ -110,31 +126,47 @@ async function getAccessToken(credentials: WarcraftLogsCredentials) {
     body: "grant_type=client_credentials",
   });
   if (!response.ok) throw new Error(`Warcraft Logs authentication failed (${response.status}).`);
-  const payload = await response.json() as { access_token?: string };
+  const payload = await response.json() as { access_token?: string; expires_in?: number };
   if (!payload.access_token) throw new Error("Warcraft Logs did not return an access token.");
+  cachedToken = {
+    clientId: credentials.clientId,
+    value: payload.access_token,
+    expiresAt: Date.now() + Math.max(60, payload.expires_in ?? 3600) * 1000,
+  };
   return payload.access_token;
 }
 
-async function graphQL<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const response = await fetch("https://www.warcraftlogs.com/api/v2/client", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables }),
-    });
-    if (response.status === 429 && attempt < 3) {
-      const retryAfter = Number(response.headers.get("Retry-After"));
-      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 650 * (attempt + 1);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      continue;
-    }
-    const payload = await response.json() as { data?: T; errors?: { message: string }[] };
-    if (!response.ok || payload.errors?.length || !payload.data) {
-      throw new Error(payload.errors?.[0]?.message ?? `Warcraft Logs request failed (${response.status}).`);
-    }
-    return payload.data;
+function retryAfterSeconds(response: Response) {
+  const retryAfter = response.headers.get("Retry-After");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds > 0) return Math.ceil(seconds);
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) return Math.max(1, Math.ceil((retryAt - Date.now()) / 1000));
   }
-  throw new Error("Warcraft Logs is temporarily rate limiting analysis requests. Try recalculating again in a moment.");
+  const reset = Number(response.headers.get("X-RateLimit-Reset"));
+  if (Number.isFinite(reset) && reset > 0) {
+    return reset > 10_000_000_000
+      ? Math.max(1, Math.ceil((reset - Date.now()) / 1000))
+      : reset > 1_000_000_000
+        ? Math.max(1, Math.ceil(reset - Date.now() / 1000))
+        : Math.ceil(reset);
+  }
+  return undefined;
+}
+
+async function graphQL<T>(token: string, query: string, variables: Record<string, unknown>): Promise<T> {
+  const response = await fetch("https://www.warcraftlogs.com/api/v2/client", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (response.status === 429) throw new WarcraftLogsRateLimitError(retryAfterSeconds(response));
+  const payload = await response.json() as { data?: T; errors?: { message: string }[] };
+  if (!response.ok || payload.errors?.length || !payload.data) {
+    throw new Error(payload.errors?.[0]?.message ?? `Warcraft Logs request failed (${response.status}).`);
+  }
+  return payload.data;
 }
 
 export async function fetchReportOverview(code: string, credentials: WarcraftLogsCredentials) {
@@ -161,6 +193,21 @@ export async function fetchReportOverview(code: string, credentials: WarcraftLog
   `, { code });
   if (!data.reportData.report) throw new Error(`Report ${code} was not found or is not public.`);
   return { report: data.reportData.report, token };
+}
+
+export async function fetchReportAbilities(code: string, credentials: WarcraftLogsCredentials) {
+  const token = await getAccessToken(credentials);
+  const data = await graphQL<{ reportData: { report: { masterData?: WclReportOverview["masterData"] } | null } }>(token, `
+    query ReportAbilities($code: String!) {
+      reportData {
+        report(code: $code, allowUnlisted: true) {
+          masterData { abilities { gameID name icon } }
+        }
+      }
+    }
+  `, { code });
+  if (!data.reportData.report) throw new Error(`Report ${code} was not found, public, or unlisted.`);
+  return data.reportData.report.masterData?.abilities ?? [];
 }
 
 export async function fetchReportPreview(code: string, credentials: WarcraftLogsCredentials) {
