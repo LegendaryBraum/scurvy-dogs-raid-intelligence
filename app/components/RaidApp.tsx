@@ -5,11 +5,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
 
-type View = "player" | "officer" | "configure";
+type View = "home" | "player" | "officer" | "configure";
 type ConfigureSection = "raid-data" | "people" | "scoring" | "access";
 type ImportFight = { id: number; name: string; pullNumber: number; difficulty: string; duration: string; result: string; playerCount: number };
 type ImportGroup = { id: string; label: string; description: string; kind: "raid" | "mythic_plus" | "other"; defaultSelected: boolean; fights: ImportFight[] };
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
+type WclAllowance = { state: "checking" | "ready" | "low" | "full" | "unavailable"; percentRemaining?: number; pointsResetIn?: number; error?: string };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
 const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
@@ -20,11 +21,17 @@ const moduleDescriptions: Record<ScoreKey, string> = {
   preparation: "Flasks, food, enchants, gems, and potion checks when the season is ready for them.",
 };
 
-function ImportModal({ reportUrls, previews, selections, busy, status, onClose, onUrlsChange, onReview, onConfirm, onToggleGroup, onToggleFight, onReset }: { reportUrls: string; previews: ImportPreview[]; selections: Record<string, number[]>; busy: boolean; status: string; onClose: () => void; onUrlsChange: (value: string) => void; onReview: (event: FormEvent) => void; onConfirm: () => void; onToggleGroup: (code: string, group: ImportGroup, selected: boolean) => void; onToggleFight: (code: string, fightId: number) => void; onReset: () => void }) {
+function resetInLabel(seconds?: number) {
+  if (!seconds || seconds <= 0) return "Reset time unavailable";
+  if (seconds < 60) return `Resets in ${seconds} sec`;
+  return `Resets in ${Math.ceil(seconds / 60)} min`;
+}
+
+function ImportModal({ reportUrls, previews, selections, allowance, busy, status, onClose, onUrlsChange, onReview, onConfirm, onToggleGroup, onToggleFight, onReset }: { reportUrls: string; previews: ImportPreview[]; selections: Record<string, number[]>; allowance: WclAllowance; busy: boolean; status: string; onClose: () => void; onUrlsChange: (value: string) => void; onReview: (event: FormEvent) => void; onConfirm: () => void; onToggleGroup: (code: string, group: ImportGroup, selected: boolean) => void; onToggleFight: (code: string, fightId: number) => void; onReset: () => void }) {
   const selectedCount = Object.values(selections).reduce((total, ids) => total + ids.length, 0);
   const foundCount = previews.reduce((total, preview) => total + preview.pullCount, 0);
   const excludedCount = Math.max(0, foundCount - selectedCount);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="import-modal selective-import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">{previews.length ? "Choose exactly what to import" : "Review the full run before importing"}</h2></div><button type="button" onClick={onClose} aria-label="Close import">×</button></div><p>{previews.length ? "Everything found in the report is listed below. Select whole content groups or open any group to choose individual pulls." : "Paste one or more normal Warcraft Logs report links. The app reads the contents first; nothing is saved until you approve the exact pulls."}</p><form onSubmit={onReview}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => onUrlsChange(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Read contents</span><b>→</b><span>Choose pulls</span><b>→</b><span>Confirm import</span></div>{previews.length === 0 && <button className="primary-button" disabled={busy} type="submit">{busy ? "Reading report…" : "Read report contents"}</button>}{status && <p className="form-status" role="status">{status}</p>}</form>{previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Importing selected pulls…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}<small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="import-modal selective-import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">{previews.length ? "Choose exactly what to import" : "Review the full run before importing"}</h2></div><button type="button" onClick={onClose} aria-label="Close import">×</button></div><p>{previews.length ? "Everything found in the report is listed below. Select whole content groups or open any group to choose individual pulls." : "Paste one or more normal Warcraft Logs report links. The app reads the contents first; nothing is saved until you approve the exact pulls."}</p><form onSubmit={onReview}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => onUrlsChange(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Read contents</span><b>→</b><span>Choose pulls</span><b>→</b><span>Confirm import</span></div>{previews.length === 0 && <div className="import-action-row"><button className="primary-button" disabled={busy || allowance.state === "full"} type="submit">{busy ? "Reading report…" : allowance.state === "full" ? "Waiting for Warcraft Logs" : "Read report contents"}</button><div aria-live="polite" className={`api-allowance allowance-${allowance.state}`}><i /><span><strong>{allowance.state === "checking" ? "Checking allowance" : allowance.state === "ready" ? "Warcraft Logs ready" : allowance.state === "low" ? "Allowance getting low" : allowance.state === "full" ? "Hourly allowance full" : "Allowance unavailable"}</strong><small>{allowance.state === "checking" ? "Reading the shared API meter…" : allowance.state === "ready" || allowance.state === "low" ? `${allowance.percentRemaining ?? 0}% available · ${resetInLabel(allowance.pointsResetIn)}` : allowance.state === "full" ? resetInLabel(allowance.pointsResetIn) : "You can still try the import"}</small></span></div></div>}{status && <p className="form-status" role="status">{status}</p>}</form>{previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Importing selected pulls…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}<small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small></section></div>;
 }
 
 function RosterManager({ members, busy, status, onToggle }: { members: RosterMember[]; busy: boolean; status: string; onToggle: (member: RosterMember) => void }) {
@@ -175,7 +182,7 @@ function OfficerAccessLanding({ checking }: { checking: boolean }) {
 
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
   const [initialData, setInitialData] = useState(fallbackData);
-  const [view, setView] = useState<View>("player");
+  const [view, setView] = useState<View>("home");
   const [configureSection, setConfigureSection] = useState<ConfigureSection>("people");
   const [playerTab, setPlayerTab] = useState<"review" | "history">("review");
   const [activeScore, setActiveScore] = useState<ScoreKey | null>(null);
@@ -189,6 +196,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
   const [importSelections, setImportSelections] = useState<Record<string, number[]>>({});
   const [importStatus, setImportStatus] = useState("");
+  const [wclAllowance, setWclAllowance] = useState<WclAllowance>({ state: "checking" });
   const [importRaidNightId, setImportRaidNightId] = useState<string | null>(null);
   const [replaceReportCodes, setReplaceReportCodes] = useState<string[]>([]);
   const [shareStatus, setShareStatus] = useState("");
@@ -311,6 +319,19 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     return () => { active = false; };
   }, [accessState, configureSection, initialData.events, initialData.pullEvents, initialData.reportCode, rules, view]);
 
+  useEffect(() => {
+    if (accessState !== "granted" || !importOpen) return;
+    let active = true;
+    fetch("/api/wcl-status", { cache: "no-store" })
+      .then(async (response) => {
+        const result = await response.json() as WclAllowance;
+        if (!active) return;
+        setWclAllowance(response.ok || response.status === 429 ? result : { state: "unavailable", error: result.error });
+      })
+      .catch(() => { if (active) setWclAllowance({ state: "unavailable" }); });
+    return () => { active = false; };
+  }, [accessState, importOpen]);
+
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
   const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
@@ -372,16 +393,16 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }
 
   function openNewImport() {
-    setImportRaidNightId(null); setReplaceReportCodes([]); setReportUrls(""); resetImportReview(); setImportOpen(true);
+    setImportRaidNightId(null); setReplaceReportCodes([]); setReportUrls(""); setWclAllowance({ state: "checking" }); resetImportReview(); setImportOpen(true);
   }
 
   function addReportToNight(night: RaidNightRecord) {
-    setImportRaidNightId(night.id); setReplaceReportCodes([]); setReportUrls(""); resetImportReview(); setImportStatus(`The selected report will be added to ${night.name}.`); setImportOpen(true);
+    setImportRaidNightId(night.id); setReplaceReportCodes([]); setReportUrls(""); setWclAllowance({ state: "checking" }); resetImportReview(); setImportStatus(`The selected report will be added to ${night.name}.`); setImportOpen(true);
   }
 
   function replaceReport(report: RaidReportRecord) {
     const night = runNights.find((candidate) => candidate.reports.some((stored) => stored.id === report.id));
-    setImportRaidNightId(night?.id ?? null); setReplaceReportCodes([report.code]); setReportUrls(report.url); resetImportReview(); setImportStatus(`Review the pulls, then replace the saved copy of ${report.title}.`); setImportOpen(true);
+    setImportRaidNightId(night?.id ?? null); setReplaceReportCodes([report.code]); setReportUrls(report.url); setWclAllowance({ state: "checking" }); resetImportReview(); setImportStatus(`Review the pulls, then replace the saved copy of ${report.title}.`); setImportOpen(true);
   }
 
   async function updateRun(target: "raid_night" | "report" | "pull", id: string, included: boolean) {
@@ -437,8 +458,11 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     event.preventDefault(); setBusy(true); setImportStatus("Reading every encounter in the report…"); setImportPreviews([]); setImportSelections({});
     try {
       const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", urls: reportUrls, season: initialData.season }) });
-      const result = await response.json() as { error?: string; reports?: ImportPreview[]; needsConnection?: boolean };
-      if (!response.ok) throw new Error(result.needsConnection ? "The one-time Warcraft Logs connection still needs to be completed before the first import." : result.error ?? "Preview failed.");
+      const result = await response.json() as { error?: string; reports?: ImportPreview[]; needsConnection?: boolean; rateLimited?: boolean; retryAfterSeconds?: number };
+      if (!response.ok) {
+        if (result.rateLimited) setWclAllowance({ state: "full", percentRemaining: 0, pointsResetIn: result.retryAfterSeconds, error: result.error });
+        throw new Error(result.needsConnection ? "The one-time Warcraft Logs connection still needs to be completed before the first import." : result.error ?? "Preview failed.");
+      }
       const reports = result.reports ?? [];
       setImportPreviews(reports);
       setImportSelections(Object.fromEntries(reports.map((report) => [report.code, report.groups.filter((group) => group.defaultSelected).flatMap((group) => group.fights.map((fight) => fight.id))])));
@@ -453,8 +477,11 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     setBusy(true); setImportStatus("Importing only the selected pulls and applying active rules…");
     try {
       const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season, selections, raidNightId: importRaidNightId, replaceReportCodes }) });
-      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[] };
-      if (!response.ok) throw new Error(result.error ?? "Import failed.");
+      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[]; rateLimited?: boolean; retryAfterSeconds?: number };
+      if (!response.ok) {
+        if (result.rateLimited) setWclAllowance({ state: "full", percentRemaining: 0, pointsResetIn: result.retryAfterSeconds, error: result.error });
+        throw new Error(result.error ?? "Import failed.");
+      }
       const stored = result.reports ?? [];
       const pulls = stored.reduce((total, report) => total + (report.pulls ?? 0), 0);
       const bosses = stored.reduce((total, report) => total + (report.bosses ?? 0), 0);
@@ -605,14 +632,25 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   return (
     <main className="shell">
       <header className="topbar">
-        <button className="brand brand-button" type="button" onClick={() => setView("player")} aria-label="Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Raid Intelligence</small></span></button>
+        <button className="brand brand-button" type="button" onClick={() => setView("home")} aria-label="Return to Scurvy Dogs home"><span className="brand-mark">SD</span><span><strong>Scurvy Dogs</strong><small>Raid Intelligence</small></span></button>
         <nav aria-label="Primary navigation">
+          <button className={view === "home" ? "active" : ""} type="button" onClick={() => setView("home")}>Home</button>
           <button className={view === "player" ? "active" : ""} type="button" onClick={() => setView("player")}>Player view</button>
           <button className={view === "officer" ? "active" : ""} type="button" onClick={() => setView("officer")}>Officer view</button>
           <button className={view === "configure" ? "active" : ""} type="button" onClick={() => setView("configure")}>Configure</button>
         </nav>
         <div className="header-actions"><span className="demo-pill real-data">{initialData.dataSource?.label ?? "Raid dataset"}</span><button className="import-button" type="button" onClick={openNewImport}>Import logs</button><button className="avatar" type="button" aria-label={`Sign out ${officerName} on this device`} onClick={signOutOfficerDevice} title={`${officerName} · sign out this device`}>{officerName.slice(0, 2).toUpperCase() || "OF"}</button></div>
       </header>
+
+      {view === "home" && <section className="dashboard home-menu" id="home">
+        <div className="home-intro"><p className="eyebrow"><span /> Officer workspace</p><h1>Where do you want to start?</h1><p>Choose a workspace first. No player is selected until you decide to open the player dashboard.</p></div>
+        <div className="home-pillars" aria-label="Scurvy Dogs workspaces">
+          <button className="home-pillar home-pillar-player" onClick={() => setView("player")} type="button"><span className="home-pillar-number">01</span><span className="home-pillar-icon">P</span><span className="home-pillar-copy"><small>Individual coaching</small><strong>Player View</strong><p>Choose a raider once, then review their raid night, boss, pull, mechanics, performance, and history.</p></span><span className="home-pillar-footer"><b>{rosterMembers.filter((member) => member.included).length} active raiders</b><i>Open player dashboard →</i></span></button>
+          <button className="home-pillar home-pillar-officer" onClick={() => setView("officer")} type="button"><span className="home-pillar-number">02</span><span className="home-pillar-icon">O</span><span className="home-pillar-copy"><small>Raid-wide context</small><strong>Officer View</strong><p>Compare the active roster, spot team-wide patterns, and identify who needs attention on the selected pull.</p></span><span className="home-pillar-footer"><b>{initialData.pulls.length} pulls available</b><i>Open officer view →</i></span></button>
+          <button className="home-pillar home-pillar-configure" onClick={() => setView("configure")} type="button"><span className="home-pillar-number">03</span><span className="home-pillar-icon">C</span><span className="home-pillar-copy"><small>Control center</small><strong>Configure</strong><p>Manage raid data, roster and alts, scoring rules, modules, and every player or officer access link.</p></span><span className="home-pillar-footer"><b>{activeRules.length} active rules</b><i>Open configuration →</i></span></button>
+        </div>
+        <div className="home-quickbar"><div><small>Current raid night</small><strong>{initialData.raidNight}</strong><span>{initialData.raid} · {initialData.bosses.length} bosses · {initialData.pulls.length} pulls</span></div><button className="import-button" onClick={openNewImport} type="button">Import a new raid log</button></div>
+      </section>}
 
       {view === "player" && <section className="dashboard" id="dashboard">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Player dashboard · {initialData.raidNight}</p><button className="share-button" disabled={busy || !playerPresent} onClick={createShare} type="button">Share private view</button></div>
@@ -712,6 +750,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         reportUrls={reportUrls}
         previews={importPreviews}
         selections={importSelections}
+        allowance={wclAllowance}
         busy={busy}
         status={importStatus}
         onClose={() => setImportOpen(false)}

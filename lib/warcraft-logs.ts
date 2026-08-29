@@ -1,5 +1,14 @@
 export type WarcraftLogsCredentials = { clientId: string; clientSecret: string };
 
+export type WclRateLimitStatus = {
+  limitPerHour: number;
+  pointsSpentThisHour: number;
+  pointsResetIn: number;
+  pointsRemaining: number;
+  percentRemaining: number;
+  state: "ready" | "low" | "full";
+};
+
 export type WclReportOverview = {
   code: string;
   title: string;
@@ -167,6 +176,32 @@ async function graphQL<T>(token: string, query: string, variables: Record<string
     throw new Error(payload.errors?.[0]?.message ?? `Warcraft Logs request failed (${response.status}).`);
   }
   return payload.data;
+}
+
+let cachedRateLimit: { clientId: string; value: WclRateLimitStatus; expiresAt: number } | null = null;
+
+export async function fetchRateLimitStatus(credentials: WarcraftLogsCredentials) {
+  if (cachedRateLimit?.clientId === credentials.clientId && cachedRateLimit.expiresAt > Date.now()) return cachedRateLimit.value;
+  const token = await getAccessToken(credentials);
+  const data = await graphQL<{ rateLimitData: { limitPerHour: number; pointsSpentThisHour: number; pointsResetIn: number } }>(token, `
+    query ApiAllowance {
+      rateLimitData { limitPerHour pointsSpentThisHour pointsResetIn }
+    }
+  `, {});
+  const limitPerHour = Math.max(0, Number(data.rateLimitData.limitPerHour) || 0);
+  const pointsSpentThisHour = Math.max(0, Number(data.rateLimitData.pointsSpentThisHour) || 0);
+  const pointsRemaining = Math.max(0, limitPerHour - pointsSpentThisHour);
+  const percentRemaining = limitPerHour > 0 ? Math.max(0, Math.min(100, Math.round(pointsRemaining / limitPerHour * 100))) : 0;
+  const value: WclRateLimitStatus = {
+    limitPerHour,
+    pointsSpentThisHour,
+    pointsResetIn: Math.max(0, Math.round(Number(data.rateLimitData.pointsResetIn) || 0)),
+    pointsRemaining,
+    percentRemaining,
+    state: pointsRemaining <= 0 ? "full" : percentRemaining <= 20 ? "low" : "ready",
+  };
+  cachedRateLimit = { clientId: credentials.clientId, value, expiresAt: Date.now() + 30_000 };
+  return value;
 }
 
 export async function fetchReportOverview(code: string, credentials: WarcraftLogsCredentials) {

@@ -23,7 +23,7 @@ test("server-renders the link-locked public shell without private raid data", as
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration] = await Promise.all([
+  const [app, importer, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalyze/route.ts", import.meta.url), "utf8"),
@@ -48,12 +48,17 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/share/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/private-placeholder.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0006_wandering_liz_osborn.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/wcl-status/route.ts", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
   assert.match(app, /score-detail-panel/);
   assert.match(app, /aria-expanded/);
   assert.match(app, /Read report contents/);
+  assert.match(app, /Where do you want to start/);
+  assert.match(app, /Return to Scurvy Dogs home/);
+  assert.match(app, /Warcraft Logs ready/);
+  assert.match(app, /Allowance getting low/);
   assert.match(app, /Choose individual pulls/);
   assert.match(app, /Only the selected pulls/);
   assert.match(app, /Choose who belongs in the analysis/);
@@ -89,6 +94,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(reanalyzer, /resetExisting: true/);
   assert.match(warcraftLogs, /WarcraftLogsRateLimitError/);
   assert.match(warcraftLogs, /hourly API allowance is temporarily full/);
+  assert.match(warcraftLogs, /rateLimitData \{ limitPerHour pointsSpentThisHour pointsResetIn \}/);
   assert.match(spellIcons, /fetchReportAbilities/);
   assert.doesNotMatch(spellIcons, /fetchReportOverview/);
   assert.match(importer, /status: 429/);
@@ -165,7 +171,9 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(accessMigration, /CREATE TABLE `player_access_links`/);
   assert.match(await readFile(new URL("../drizzle/0007_nosy_flatman.sql", import.meta.url), "utf8"), /ADD `token` text/);
   assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
-  for (const privateRoute of [importer, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi]) assert.match(privateRoute, /getOfficerSession/);
+  assert.match(wclStatus, /fetchRateLimitStatus/);
+  assert.match(wclStatus, /status: 429/);
+  for (const privateRoute of [importer, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);
   assert.match(schema, /officerSessions/);
 });
