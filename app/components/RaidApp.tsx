@@ -11,6 +11,7 @@ type ImportFight = { id: number; name: string; pullNumber: number; difficulty: s
 type ImportGroup = { id: string; label: string; description: string; kind: "raid" | "mythic_plus" | "other"; defaultSelected: boolean; fights: ImportFight[] };
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 type WclAllowance = { state: "checking" | "ready" | "low" | "full" | "unavailable"; percentRemaining?: number; pointsResetIn?: number; error?: string };
+type ImportJob = { id: string; reportCode: string; reportUrl: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
 const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
@@ -27,11 +28,36 @@ function resetInLabel(seconds?: number) {
   return `Resets in ${Math.ceil(seconds / 60)} min`;
 }
 
-function ImportModal({ reportUrls, previews, selections, allowance, busy, status, onClose, onUrlsChange, onReview, onConfirm, onToggleGroup, onToggleFight, onReset }: { reportUrls: string; previews: ImportPreview[]; selections: Record<string, number[]>; allowance: WclAllowance; busy: boolean; status: string; onClose: () => void; onUrlsChange: (value: string) => void; onReview: (event: FormEvent) => void; onConfirm: () => void; onToggleGroup: (code: string, group: ImportGroup, selected: boolean) => void; onToggleFight: (code: string, fightId: number) => void; onReset: () => void }) {
+function ImportModal({ reportUrls, previews, selections, jobs, allowance, busy, status, onClose, onUrlsChange, onReview, onConfirm, onResume, onCancel, onToggleGroup, onToggleFight, onReset }: { reportUrls: string; previews: ImportPreview[]; selections: Record<string, number[]>; jobs: ImportJob[]; allowance: WclAllowance; busy: boolean; status: string; onClose: () => void; onUrlsChange: (value: string) => void; onReview: (event: FormEvent) => void; onConfirm: () => void; onResume: () => void; onCancel: (job: ImportJob) => void; onToggleGroup: (code: string, group: ImportGroup, selected: boolean) => void; onToggleFight: (code: string, fightId: number) => void; onReset: () => void }) {
   const selectedCount = Object.values(selections).reduce((total, ids) => total + ids.length, 0);
   const foundCount = previews.reduce((total, preview) => total + preview.pullCount, 0);
   const excludedCount = Math.max(0, foundCount - selectedCount);
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="import-modal selective-import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">{previews.length ? "Choose exactly what to import" : "Review the full run before importing"}</h2></div><button type="button" onClick={onClose} aria-label="Close import">×</button></div><p>{previews.length ? "Everything found in the report is listed below. Select whole content groups or open any group to choose individual pulls." : "Paste one or more normal Warcraft Logs report links. The app reads the contents first; nothing is saved until you approve the exact pulls."}</p><form onSubmit={onReview}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => onUrlsChange(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Read contents</span><b>→</b><span>Choose pulls</span><b>→</b><span>Confirm import</span></div>{previews.length === 0 && <div className="import-action-row"><button className="primary-button" disabled={busy || allowance.state === "full"} type="submit">{busy ? "Reading report…" : allowance.state === "full" ? "Waiting for Warcraft Logs" : "Read report contents"}</button><div aria-live="polite" className={`api-allowance allowance-${allowance.state}`}><i /><span><strong>{allowance.state === "checking" ? "Checking allowance" : allowance.state === "ready" ? "Warcraft Logs ready" : allowance.state === "low" ? "Allowance getting low" : allowance.state === "full" ? "Hourly allowance full" : "Allowance unavailable"}</strong><small>{allowance.state === "checking" ? "Reading the shared API meter…" : allowance.state === "ready" || allowance.state === "low" ? `${allowance.percentRemaining ?? 0}% available · ${resetInLabel(allowance.pointsResetIn)}` : allowance.state === "full" ? resetInLabel(allowance.pointsResetIn) : "You can still try the import"}</small></span></div></div>}{status && <p className="form-status" role="status">{status}</p>}</form>{previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Importing selected pulls…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}<small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small></section></div>;
+  const activeJobs = jobs.filter((job) => job.status !== "completed");
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="import-modal selective-import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="modal-heading"><div><p className="eyebrow"><span /> Warcraft Logs import</p><h2 id="import-title">{activeJobs.length ? "Your import is safely checkpointed" : previews.length ? "Choose exactly what to import" : "Review the full run before importing"}</h2></div><button type="button" onClick={onClose} aria-label="Close import">×</button></div>
+    {activeJobs.length > 0 ? <div className="import-job-workspace">
+      <p>Each pull is saved as a checkpoint. You can close this window or leave the site; unfinished work will still be here when you return.</p>
+      <div className="import-job-list">{jobs.map((job) => {
+        const percent = job.totalPulls ? Math.round(job.completedPulls / job.totalPulls * 100) : 0;
+        const stateLabel = job.status === "paused" ? "Paused safely" : job.status === "failed" ? "Needs attention" : job.status === "completed" ? "Complete" : job.status === "processing" ? "Analyzing now" : "Ready";
+        return <article className={`import-job import-job-${job.status}`} key={job.id}>
+          <div className="import-job-heading"><div><strong>{job.reportCode}</strong><small>{job.currentLabel ?? "Waiting to continue"}</small></div><span>{stateLabel}</span></div>
+          <div className="import-progress" aria-label={`${job.completedPulls} of ${job.totalPulls} pulls analyzed`}><i style={{ width: `${percent}%` }} /></div>
+          <div className="import-job-meta"><span><strong>{job.completedPulls}</strong> of <strong>{job.totalPulls}</strong> pulls analyzed</span><span>{percent}%</span></div>
+          {job.error && <p className="import-job-error">{job.error}</p>}
+          <div className="import-job-actions">{job.status !== "completed" && <button className="danger-text" disabled={busy} onClick={() => onCancel(job)} type="button">Remove unfinished import</button>}</div>
+        </article>;
+      })}</div>
+      {status && <p className="form-status" role="status">{status}</p>}
+      <button className="primary-button resume-import" disabled={busy} onClick={onResume} type="button">{busy ? "Analyzing the next pull…" : activeJobs.some((job) => job.status === "paused") ? "Try resume now" : activeJobs.some((job) => job.status === "failed") ? "Retry from last checkpoint" : "Continue import"}</button>
+      <small className="credential-note">Nothing staged here appears in player dashboards, attendance, or officer comparisons until every selected pull is complete.</small>
+    </div> : <>
+      <p>{previews.length ? "Everything found in the report is listed below. Select whole content groups or open any group to choose individual pulls." : "Paste one or more normal Warcraft Logs report links. The app reads the contents first; nothing is saved until you approve the exact pulls."}</p>
+      <form onSubmit={onReview}><label>Full report URL<textarea autoFocus value={reportUrls} onChange={(event) => onUrlsChange(event.target.value)} placeholder={"https://www.warcraftlogs.com/reports/ABC12345"} required /></label><div className="import-path"><span>Paste link</span><b>→</b><span>Read contents</span><b>→</b><span>Choose pulls</span><b>→</b><span>Confirm import</span></div>{previews.length === 0 && <div className="import-action-row"><button className="primary-button" disabled={busy || allowance.state === "full"} type="submit">{busy ? "Reading report…" : allowance.state === "full" ? "Waiting for Warcraft Logs" : "Read report contents"}</button><div aria-live="polite" className={`api-allowance allowance-${allowance.state}`}><i /><span><strong>{allowance.state === "checking" ? "Checking allowance" : allowance.state === "ready" ? "Warcraft Logs ready" : allowance.state === "low" ? "Allowance getting low" : allowance.state === "full" ? "Hourly allowance full" : "Allowance unavailable"}</strong><small>{allowance.state === "checking" ? "Reading the shared API meter…" : allowance.state === "ready" || allowance.state === "low" ? `${allowance.percentRemaining ?? 0}% available · ${resetInLabel(allowance.pointsResetIn)}` : allowance.state === "full" ? resetInLabel(allowance.pointsResetIn) : "You can still try the import"}</small></span></div></div>}{status && <p className="form-status" role="status">{status}</p>}</form>
+      {previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Creating safe import…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}
+      <small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small>
+    </>}
+  </section></div>;
 }
 
 function RosterManager({ members, busy, status, onToggle }: { members: RosterMember[]; busy: boolean; status: string; onToggle: (member: RosterMember) => void }) {
@@ -195,6 +221,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [reportUrls, setReportUrls] = useState("");
   const [importPreviews, setImportPreviews] = useState<ImportPreview[]>([]);
   const [importSelections, setImportSelections] = useState<Record<string, number[]>>({});
+  const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
   const [importStatus, setImportStatus] = useState("");
   const [wclAllowance, setWclAllowance] = useState<WclAllowance>({ state: "checking" });
   const [importRaidNightId, setImportRaidNightId] = useState<string | null>(null);
@@ -329,6 +356,20 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         setWclAllowance(response.ok || response.status === 429 ? result : { state: "unavailable", error: result.error });
       })
       .catch(() => { if (active) setWclAllowance({ state: "unavailable" }); });
+    return () => { active = false; };
+  }, [accessState, importOpen]);
+
+  useEffect(() => {
+    if (accessState !== "granted" || !importOpen) return;
+    let active = true;
+    fetch("/api/import-jobs", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ jobs: ImportJob[] }> : null)
+      .then((result) => {
+        if (!active || !result) return;
+        setImportJobs(result.jobs ?? []);
+        if (result.jobs?.length) setImportStatus("An unfinished import was found. Continue from the saved checkpoint whenever Warcraft Logs is ready.");
+      })
+      .catch(() => undefined);
     return () => { active = false; };
   }, [accessState, importOpen]);
 
@@ -471,23 +512,83 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     finally { setBusy(false); }
   }
 
-  async function confirmImport() {
-    const selections = importPreviews.map((preview) => ({ code: preview.code, fightIds: importSelections[preview.code] ?? [] }));
-    if (!selections.some((selection) => selection.fightIds.length)) { setImportStatus("Select at least one pull to import."); return; }
-    setBusy(true); setImportStatus("Importing only the selected pulls and applying active rules…");
-    try {
-      const response = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "import", urls: reportUrls, season: initialData.season, selections, raidNightId: importRaidNightId, replaceReportCodes }) });
-      const result = await response.json() as { error?: string; reports?: { status: string; pulls?: number; bosses?: number }[]; rateLimited?: boolean; retryAfterSeconds?: number };
-      if (!response.ok) {
-        if (result.rateLimited) setWclAllowance({ state: "full", percentRemaining: 0, pointsResetIn: result.retryAfterSeconds, error: result.error });
-        throw new Error(result.error ?? "Import failed.");
+  async function runImportJobs(sourceJobs: ImportJob[]) {
+    const queue = [...sourceJobs];
+    for (let index = 0; index < queue.length; index += 1) {
+      let current = queue[index];
+      while (current.status !== "completed") {
+        setImportStatus(current.completedPulls
+          ? `Analyzing ${current.reportCode}: ${current.completedPulls} of ${current.totalPulls} pulls safely checkpointed…`
+          : `Preparing ${current.reportCode} for a safe pull-by-pull import…`);
+        const response = await fetch("/api/import-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "process", jobId: current.id }),
+        });
+        const result = await response.json() as { error?: string; job?: ImportJob; rateLimited?: boolean; busy?: boolean };
+        if (!response.ok || !result.job) throw new Error(result.error ?? "The next import checkpoint could not be completed.");
+        current = result.job;
+        queue[index] = current;
+        setImportJobs((jobs) => jobs.map((job) => job.id === current.id ? current : job));
+        if (result.rateLimited || current.status === "paused") {
+          setWclAllowance({ state: "full", percentRemaining: 0, pointsResetIn: current.retryAfterSeconds, error: current.error ?? undefined });
+          const resumes = current.resumeAfter ? new Date(current.resumeAfter).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+          setImportStatus(`${current.completedPulls} of ${current.totalPulls} pulls are safe. Warcraft Logs paused the import${resumes ? `; it can resume around ${resumes}` : ""}.`);
+          return;
+        }
+        if (current.status === "failed") {
+          setImportStatus(current.error ?? "The import stopped at a safe checkpoint. Retry when ready.");
+          return;
+        }
+        if (result.busy) {
+          setImportStatus("An import step is still finishing. Wait a moment, then continue from the same checkpoint.");
+          return;
+        }
       }
-      const stored = result.reports ?? [];
-      const pulls = stored.reduce((total, report) => total + (report.pulls ?? 0), 0);
-      const bosses = stored.reduce((total, report) => total + (report.bosses ?? 0), 0);
-      setImportStatus(pulls ? `${pulls} pulls across ${bosses} bosses imported. Opening the new raid dashboard…` : "This report was already imported. Opening its dashboard…");
-      window.setTimeout(() => window.location.reload(), 700);
+    }
+    setImportStatus("Every selected pull is complete. Opening the refreshed raid dashboard…");
+    window.setTimeout(() => window.location.reload(), 700);
+  }
+
+  async function confirmImport() {
+    const selections = importPreviews.map((preview) => ({ code: preview.code, fightIds: importSelections[preview.code] ?? [], startedAt: preview.startedAt }));
+    if (!selections.some((selection) => selection.fightIds.length)) { setImportStatus("Select at least one pull to import."); return; }
+    setBusy(true); setImportStatus("Creating a safe, resumable import…");
+    try {
+      const response = await fetch("/api/import-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", urls: reportUrls, season: initialData.season, selections, raidNightId: importRaidNightId, replaceReportCodes }) });
+      const result = await response.json() as { error?: string; jobs?: ImportJob[]; skipped?: { code: string; reason: string }[] };
+      if (!response.ok) throw new Error(result.error ?? "The resumable import could not be created.");
+      const jobs = result.jobs ?? [];
+      setImportJobs(jobs);
+      setImportPreviews([]);
+      if (!jobs.length) {
+        setImportStatus(result.skipped?.some((item) => item.reason === "already_imported") ? "This report is already imported. Use Replace / reimport from Raid Data if you want to rebuild it." : "No new pulls were queued.");
+        return;
+      }
+      await runImportJobs(jobs);
     } catch (error) { setImportStatus(error instanceof Error ? error.message : "The report could not be imported."); }
+    finally { setBusy(false); }
+  }
+
+  async function resumeImport() {
+    const unfinished = importJobs.filter((job) => job.status !== "completed");
+    if (!unfinished.length) return;
+    setBusy(true);
+    try { await runImportJobs(unfinished); }
+    catch (error) { setImportStatus(error instanceof Error ? error.message : "The import could not resume."); }
+    finally { setBusy(false); }
+  }
+
+  async function cancelImport(job: ImportJob) {
+    if (!window.confirm(`Remove the unfinished import for ${job.reportCode}? Completed raid data is not affected.`)) return;
+    setBusy(true); setImportStatus(`Removing the unfinished ${job.reportCode} import…`);
+    try {
+      const response = await fetch("/api/import-jobs", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId: job.id }) });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "The unfinished import could not be removed.");
+      setImportJobs((jobs) => jobs.filter((candidate) => candidate.id !== job.id));
+      setImportStatus("The unfinished import and its invisible staging data were removed.");
+    } catch (error) { setImportStatus(error instanceof Error ? error.message : "The unfinished import could not be removed."); }
     finally { setBusy(false); }
   }
 
@@ -750,6 +851,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         reportUrls={reportUrls}
         previews={importPreviews}
         selections={importSelections}
+        jobs={importJobs}
         allowance={wclAllowance}
         busy={busy}
         status={importStatus}
@@ -757,6 +859,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         onUrlsChange={(value) => { setReportUrls(value); resetImportReview(); }}
         onReview={previewReports}
         onConfirm={confirmImport}
+        onResume={resumeImport}
+        onCancel={cancelImport}
         onToggleGroup={toggleImportGroup}
         onToggleFight={toggleImportFight}
         onReset={resetImportReview}

@@ -145,6 +145,10 @@ async function getAccessToken(credentials: WarcraftLogsCredentials) {
   return payload.access_token;
 }
 
+export async function getWarcraftLogsAccessToken(credentials: WarcraftLogsCredentials) {
+  return getAccessToken(credentials);
+}
+
 function retryAfterSeconds(response: Response) {
   const retryAfter = response.headers.get("Retry-After");
   if (retryAfter) {

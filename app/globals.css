@@ -518,6 +518,28 @@ tbody tr:last-child td { border-bottom: 0; }
 .selection-summary { margin-top: 12px; padding: 11px 12px; display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 14px; border-radius: 9px; color: #66777c; background: #edf4f2; font-size: 9px; }
 .selection-summary strong { color: #284c54; font-size: 13px; }
 .selection-summary p { margin: 0; text-align: right; }
+.import-job-workspace > p { margin: 16px 0 12px; color: #65777c; font-size: 10px; line-height: 1.6; }
+.import-job-list { display: grid; gap: 10px; }
+.import-job { padding: 14px; border: 1px solid #d5e2df; border-radius: 11px; background: #fff; }
+.import-job-paused { border-color: #e8cf9d; background: #fffaf0; }
+.import-job-failed { border-color: #e5b8b1; background: #fff7f5; }
+.import-job-completed { border-color: #a9d6c7; background: #f3fbf7; }
+.import-job-heading, .import-job-meta, .import-job-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-job-heading > div, .import-job-heading strong, .import-job-heading small { display: block; min-width: 0; }
+.import-job-heading strong { color: #284c54; font-size: 12px; letter-spacing: .03em; }
+.import-job-heading small { margin-top: 3px; overflow: hidden; color: #7a8b8f; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.import-job-heading > span { padding: 5px 8px; flex: 0 0 auto; border-radius: 999px; color: #2d675c; background: #e5f3ee; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.import-job-paused .import-job-heading > span { color: #876124; background: #faeac9; }
+.import-job-failed .import-job-heading > span { color: #9a4d43; background: #f8ded9; }
+.import-progress { height: 7px; margin: 12px 0 7px; overflow: hidden; border-radius: 999px; background: #e7efed; }
+.import-progress i { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, #159878, #48bea1); transition: width .25s ease; }
+.import-job-paused .import-progress i { background: linear-gradient(90deg, #c58a30, #e5b352); }
+.import-job-meta { color: #77898d; font-size: 8px; }
+.import-job-meta strong { color: #355861; font-size: 10px; }
+.import-job-error { margin: 10px 0 0; color: #986149; font-size: 9px; line-height: 1.5; }
+.import-job-actions { margin-top: 9px; justify-content: flex-end; }
+.import-job-actions button { padding: 0; border: 0; background: transparent; font-size: 8px; }
+.resume-import { width: 100%; margin-top: 12px; }
 
 .private-shell { min-height: 100vh; background: #f3f7f6; }
 .private-topbar { height: 72px; padding: 0 clamp(20px, 5vw, 72px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #fafcfb; }

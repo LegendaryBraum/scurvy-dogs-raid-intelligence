@@ -57,6 +57,13 @@
       "when": 1787542100629,
       "tag": "0007_nosy_flatman",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788042368382,
+      "tag": "0008_sleepy_skreet",
+      "breakpoints": true
     }
   ]
 }

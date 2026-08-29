@@ -146,6 +146,10 @@ export async function DELETE(request: Request) {
     const payload = await request.json() as { target?: "raid_night" | "report"; id?: string };
     if (!payload.id || !payload.target) return Response.json({ error: "Choose a raid night or report to delete." }, { status: 400 });
     const db = await ensureSchema();
+    const activeImport = payload.target === "raid_night"
+      ? await db.prepare("SELECT report_code FROM import_jobs WHERE raid_night_id = ? AND status != 'completed' LIMIT 1").bind(payload.id).first<{ report_code: string }>()
+      : await db.prepare("SELECT ij.report_code FROM import_jobs ij JOIN reports r ON r.code = ij.report_code WHERE r.id = ? AND ij.status != 'completed' LIMIT 1").bind(payload.id).first<{ report_code: string }>();
+    if (activeImport) return Response.json({ error: `${activeImport.report_code} still has an unfinished import. Resume or remove that import before deleting its saved raid data.` }, { status: 409 });
     if (payload.target === "report") {
       await permanentlyDeleteReport(db, payload.id);
     } else {

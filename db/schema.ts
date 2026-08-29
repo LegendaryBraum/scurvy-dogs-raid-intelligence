@@ -24,6 +24,31 @@ export const reports = sqliteTable("reports", {
   importedAt: text("imported_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [uniqueIndex("idx_reports_code_unique").on(table.code), index("idx_reports_raid_night").on(table.raidNightId)]);
 
+export const importJobs = sqliteTable("import_jobs", {
+  id: text("id").primaryKey(),
+  reportCode: text("report_code").notNull(),
+  reportUrl: text("report_url").notNull(),
+  seasonId: text("season_id").notNull().references(() => seasons.id),
+  raidNightId: text("raid_night_id").notNull().references(() => raidNights.id),
+  replaceExisting: integer("replace_existing", { mode: "boolean" }).notNull().default(false),
+  selectedFightIdsJson: text("selected_fight_ids_json").notNull().default("[]"),
+  completedFightIdsJson: text("completed_fight_ids_json").notNull().default("[]"),
+  snapshotJson: text("snapshot_json"),
+  stagingReportId: text("staging_report_id"),
+  status: text("status").notNull().default("queued"),
+  totalPulls: integer("total_pulls").notNull().default(0),
+  completedPulls: integer("completed_pulls").notNull().default(0),
+  currentLabel: text("current_label"),
+  playerRows: integer("player_rows").notNull().default(0),
+  eventRows: integer("event_rows").notNull().default(0),
+  errorMessage: text("error_message"),
+  retryAfterSeconds: integer("retry_after_seconds"),
+  resumeAfter: text("resume_after"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text("completed_at"),
+}, (table) => [index("idx_import_jobs_status_updated").on(table.status, table.updatedAt), index("idx_import_jobs_report_code").on(table.reportCode)]);
+
 export const bosses = sqliteTable("bosses", {
   id: text("id").primaryKey(), seasonId: text("season_id").notNull().references(() => seasons.id),
   encounterId: integer("encounter_id").notNull(), raidName: text("raid_name").notNull(), name: text("name").notNull(),
