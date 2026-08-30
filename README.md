@@ -7,12 +7,15 @@ An internal raid-analysis MVP built around a simple promise: a player should und
 - Accepts one or multiple full-run Warcraft Logs report URLs and previews the raid contents before saving.
 - Stores the hierarchy `Season → Raid Night → Report → Boss → Pull → Player` in D1.
 - Keeps encounter rules separate from the generic analysis engine.
+- Reads a specific Wipefest pull into a human-reviewed calibration wizard with exact Spell IDs, event types, difficulty, role filters, severity bands, and transparent point caps.
 - Lets officers edit, duplicate, pause, and restore encounter rules without deleting their history.
 - Scores Mechanics, DPS/HPS Performance, Attendance, and Preparation independently.
 - Lets officers pause any score module across player, officer, and private views without deleting stored data.
 - Gives officers a full-roster comparison without inventing one opaque overall score.
 - Gives players a single dashboard with player, boss, and pull selectors updating in place.
 - Creates expiring player-only links with anonymous raid-average context and no teammate detail.
+
+Mechanics scoring starts at 100 for every pull. Only enabled penalty rules subtract points: `points per match × counted matches`, limited by the rule's optional per-pull cap and clamped at 0. Severity is a readable label, while successful interrupts/dispels and raid context are evidence-only. Wipefest percentiles are displayed for comparison and never converted into penalty points.
 
 ## Local setup
 

@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, OfficerNote, OfficerPlayerHistory, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
+import type { CalibrationBand, CalibrationCandidate, CalibrationPreview } from "../../lib/wipefest-calibration";
 import { CoachingNotes } from "./CoachingNotes";
 import { OfficerHistoryRoster } from "./OfficerHistoryRoster";
 import type { NoteEditorPayload } from "./OfficerNotesPanel";
@@ -73,6 +74,108 @@ function RosterManager({ members, busy, status, onToggle }: { members: RosterMem
 function ModuleManager({ settings, busy, status, onToggle }: { settings: ModuleSettings; busy: boolean; status: string; onToggle: (key: ScoreKey) => void }) {
   const activeCount = scoreKeys.filter((key) => settings[key]).length;
   return <article className="panel module-manager"><div className="module-manager-heading"><div><p className="eyebrow muted"><span /> Score modules</p><h2>Use only what matters right now</h2><p>Pause any module without deleting its data. Turning it back on restores it across player dashboards, officer comparisons, and private reports.</p></div><div className="module-count"><strong>{activeCount}</strong><small>Active</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="module-list">{scoreKeys.map((key) => <div className={`module-row ${settings[key] ? "" : "module-row-paused"}`} key={key}><div><strong>{scoreLabels[key]}</strong><p>{moduleDescriptions[key]}</p></div><span className={`module-state ${settings[key] ? "active" : "paused"}`}>{settings[key] ? "Active" : "Paused"}</span><button aria-pressed={settings[key]} disabled={busy} onClick={() => onToggle(key)} type="button">{settings[key] ? "Pause module" : "Turn on"}</button></div>)}</div></article>;
+}
+
+const calibrationBands: CalibrationBand[] = ["Major issue", "Minor issue", "Positive play", "Raid context"];
+const calibrationRoles = ["Tank", "Healer", "DPS"] as const;
+
+function calibrationImpact(candidate: CalibrationCandidate) {
+  if (candidate.scoringMode === "success") return "Evidence only · 0 points";
+  if (candidate.scoringMode === "context") return "Raid context · 0 points";
+  if (!candidate.maxOccurrencesPerPull) return `−${candidate.weight} each time · no cap`;
+  return `−${candidate.weight} each time · up to −${candidate.weight * candidate.maxOccurrencesPerPull}`;
+}
+
+function WipefestCalibrationWizard({ bossId, bossName, disabled, onSaved }: { bossId: string; bossName: string; disabled: boolean; onSaved: (rules: MechanicRule[]) => void }) {
+  const [wipefestUrl, setWipefestUrl] = useState("");
+  const [preview, setPreview] = useState<CalibrationPreview | null>(null);
+  const [candidates, setCandidates] = useState<CalibrationCandidate[]>([]);
+  const [roleFilter, setRoleFilter] = useState<"All" | typeof calibrationRoles[number]>("All");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  function reset() {
+    setPreview(null);
+    setCandidates([]);
+    setRoleFilter("All");
+    setStatus("");
+  }
+
+  async function readWipefest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setStatus("Reading Wipefest's mechanic definitions and player-event filters…");
+    try {
+      const response = await fetch("/api/calibration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wipefestUrl, bossId }) });
+      const result = await response.json() as { preview?: CalibrationPreview; error?: string };
+      if (!response.ok || !result.preview) throw new Error(result.error ?? "The Wipefest pull could not be read.");
+      setPreview(result.preview);
+      setCandidates(result.preview.candidates);
+      setStatus(`${result.preview.candidates.length} mechanics are ready for your final review. Nothing affects player scores until you save the checked rules.`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "The Wipefest pull could not be read."); }
+    finally { setBusy(false); }
+  }
+
+  function updateCandidate(id: string, patch: Partial<CalibrationCandidate>) {
+    setCandidates((current) => current.map((candidate) => candidate.id === id ? { ...candidate, ...patch } : candidate));
+  }
+
+  function changeRole(candidate: CalibrationCandidate, role: string) {
+    const roles = candidate.roles.includes(role) ? candidate.roles.filter((item) => item !== role) : [...candidate.roles, role];
+    updateCandidate(candidate.id, { roles });
+  }
+
+  async function saveSelected() {
+    const selected = candidates.filter((candidate) => candidate.selected && !candidate.alreadyConfigured && candidate.spellId && candidate.eventType && candidate.roles.length);
+    if (!selected.length) { setStatus("Check at least one scoreable mechanic and keep at least one applicable role."); return; }
+    setBusy(true);
+    setStatus(`Saving ${selected.length} reviewed rule${selected.length === 1 ? "" : "s"}…`);
+    try {
+      const nextRules: MechanicRule[] = selected.map((candidate) => ({
+        id: `rule-${crypto.randomUUID()}`,
+        bossId,
+        spellId: candidate.spellId!,
+        name: candidate.name,
+        icon: candidate.icon,
+        category: candidate.category,
+        severity: candidate.severity,
+        weight: candidate.scoringMode === "penalty" ? Math.max(0, candidate.weight) : 0,
+        eventType: candidate.eventType!,
+        difficulties: [preview?.difficulty ?? "Normal"],
+        roles: candidate.roles,
+        condition: {
+          scoringMode: candidate.scoringMode,
+          maxOccurrencesPerPull: candidate.scoringMode === "penalty" ? candidate.maxOccurrencesPerPull : undefined,
+          note: `Wipefest review · ${candidate.description}`,
+        },
+        enabled: true,
+      }));
+      const results = await Promise.all(nextRules.map(async (rule) => {
+        const response = await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rule) });
+        const result = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(result.error ?? `${rule.name} could not be saved.`);
+        return rule;
+      }));
+      onSaved(results);
+      setCandidates((current) => current.map((candidate) => selected.some((saved) => saved.id === candidate.id) ? { ...candidate, selected: false, alreadyConfigured: true } : candidate));
+      setStatus(`${results.length} rule${results.length === 1 ? "" : "s"} saved for ${preview?.bossName ?? bossName} ${preview?.difficulty ?? ""}. Recalculate saved pulls when the full review is complete.`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "The reviewed rules could not be saved."); }
+    finally { setBusy(false); }
+  }
+
+  const visibleCandidates = roleFilter === "All" ? candidates : candidates.filter((candidate) => candidate.roles.includes(roleFilter));
+  const selectedCount = candidates.filter((candidate) => candidate.selected && !candidate.alreadyConfigured).length;
+  return <article className={`panel calibration-wizard ${preview ? "calibration-wizard-review" : ""}`}>
+    <div className="calibration-heading"><div><p className="eyebrow"><span /> Wipefest calibration wizard</p><h2>Read the fight, then make the judgment obvious.</h2><p>Paste one specific Wipefest pull. The wizard reads Wipefest&apos;s mechanic definitions, exact Spell IDs, event types, and difficulty, then separates them for a final officer review.</p></div><span className="confidence">Human-approved</span></div>
+    <div className="score-math"><div><strong>100</strong><small>Every player starts here</small></div><b>−</b><div><strong>points × matches</strong><small>Only checked penalty rules</small></div><b>=</b><div><strong>Mechanics score</strong><small>Never below 0</small></div><p><b>Severity is a label.</b> The point field is the actual math. Wipefest percentiles remain comparison context and never become penalty points.</p></div>
+    {!preview ? <form className="calibration-form" onSubmit={readWipefest}><label>Wipefest pull URL<input value={wipefestUrl} onChange={(event) => setWipefestUrl(event.target.value)} placeholder="https://www.wipefest.gg/report/.../fight/14" required /></label><button className="primary-button" disabled={busy || disabled} type="submit">{busy ? "Reading Wipefest…" : `Read ${bossName} mechanics`}</button></form> : <>
+      <div className="calibration-source"><div><small>{preview.difficulty} · Pull {preview.fightId}</small><strong>{preview.bossName}</strong><span>{preview.reportTitle}</span></div><div>{calibrationBands.map((band) => <span className={`calibration-count calibration-count-${band.split(" ")[0].toLowerCase()}`} key={band}><strong>{candidates.filter((candidate) => candidate.band === band).length}</strong>{band}</span>)}</div><button className="review-again" disabled={busy} onClick={reset} type="button">Use another link</button></div>
+      <div className="calibration-role-tabs" aria-label="Filter mechanics by role" role="tablist">{(["All", ...calibrationRoles] as const).map((role) => <button aria-selected={roleFilter === role} className={roleFilter === role ? "active" : ""} key={role} onClick={() => setRoleFilter(role)} role="tab" type="button">{role === "All" ? "All roles" : role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}<small>{role === "All" ? candidates.length : candidates.filter((candidate) => candidate.roles.includes(role)).length}</small></button>)}</div>
+      <div className="calibration-bands">{calibrationBands.map((band) => { const items = visibleCandidates.filter((candidate) => candidate.band === band); if (!items.length) return null; return <section className={`calibration-band band-${band.split(" ")[0].toLowerCase()}`} key={band}><header><div><strong>{band}</strong><small>{band === "Major issue" ? "High-impact failures worth clear penalties" : band === "Minor issue" ? "Correctable mistakes with lighter penalties" : band === "Positive play" ? "Credit shown as evidence, never bonus points" : "Useful raid information that is not fair to blame on one player"}</small></div><span>{items.length}</span></header><div className="calibration-cards">{items.map((candidate) => <article className={`calibration-card ${candidate.selected ? "selected" : ""} ${candidate.alreadyConfigured ? "configured" : ""}`} key={candidate.id}><div className="calibration-card-main"><label className="calibration-select"><input checked={candidate.selected} disabled={candidate.alreadyConfigured || candidate.scoringMode === "context" || !candidate.spellId || !candidate.eventType} onChange={(event) => updateCandidate(candidate.id, { selected: event.target.checked })} type="checkbox" /><span>{candidate.alreadyConfigured ? "Already configured" : candidate.scoringMode === "context" ? "Context only" : candidate.selected ? "Include" : "Excluded"}</span></label>{candidate.spellId ? <SpellIcon icon={candidate.icon} name={candidate.name} spellId={candidate.spellId} /> : <span className="calibration-context-icon">i</span>}<div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>{candidate.spellId ? `Spell ${candidate.spellId} · ${candidate.eventType}` : "No fair player event"} · {candidate.confidence}</small></div><span className={`severity severity-${candidate.severity.toLowerCase()}`}>{candidate.severity}</span></div><div className="calibration-evidence"><span><small>Score effect</small><strong>{calibrationImpact(candidate)}</strong></span><span><small>Wipefest comparison</small><strong>{candidate.wipefestPercentile === null ? "Not scored" : `${candidate.wipefestPercentile}th percentile`}</strong></span><p>{candidate.confidenceReason}</p></div>{candidate.scoringMode !== "context" && !candidate.alreadyConfigured && <div className="calibration-controls"><label>Severity<select value={candidate.severity} onChange={(event) => updateCandidate(candidate.id, { severity: event.target.value as MechanicRule["severity"] })}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Points per match<input disabled={candidate.scoringMode !== "penalty"} min="0" onChange={(event) => updateCandidate(candidate.id, { weight: Math.max(0, Number(event.target.value) || 0) })} type="number" value={candidate.weight} /></label><label>Maximum matches<input disabled={candidate.scoringMode !== "penalty"} min="1" onChange={(event) => updateCandidate(candidate.id, { maxOccurrencesPerPull: Math.max(1, Number(event.target.value) || 1) })} type="number" value={candidate.maxOccurrencesPerPull ?? 1} /></label><fieldset><legend>Applies to</legend>{calibrationRoles.map((role) => <label key={role}><input checked={candidate.roles.includes(role)} onChange={() => changeRole(candidate, role)} type="checkbox" /> {role}</label>)}</fieldset></div>}</article>)}</div></section>; })}</div>
+      <div className="calibration-save"><div><strong>{selectedCount} rule{selectedCount === 1 ? "" : "s"} selected</strong><span>Review severity, points, caps, and roles before saving.</span></div><button className="primary-button" disabled={busy || disabled || selectedCount === 0} onClick={saveSelected} type="button">{busy ? "Saving reviewed rules…" : `Save ${selectedCount} reviewed rule${selectedCount === 1 ? "" : "s"}`}</button></div>
+    </>}
+    {status && <p className="config-status calibration-status" role="status">{status}</p>}
+  </article>;
 }
 
 function RaidNightManager({ raidNights, busy, status, onToggle, onDelete, onReplace, onAdd }: { raidNights: RaidNightRecord[]; busy: boolean; status: string; onToggle: (target: "raid_night" | "report" | "pull", id: string, included: boolean) => void; onDelete: (target: "raid_night" | "report", id: string, label: string) => void; onReplace: (report: RaidReportRecord) => void; onAdd: (night: RaidNightRecord) => void }) {
@@ -918,11 +1021,12 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         </div>}
         {configureSection === "scoring" && <div aria-labelledby="configure-scoring-tab" className="configure-section" id="configure-scoring" role="tabpanel">
           <ModuleManager settings={moduleSettings} busy={busy} status={moduleStatus} onToggle={toggleModule} />
+          <WipefestCalibrationWizard bossId={bossId} bossName={boss.name} disabled={busy} onSaved={(savedRules) => { setRules((current) => [...savedRules, ...current]); setRuleStatus(`${savedRules.length} Wipefest-reviewed rule${savedRules.length === 1 ? "" : "s"} saved. Recalculate saved pulls when the boss review is complete.`); }} />
           <div className="config-filters"><label>Raid<select defaultValue={initialData.raid}><option>{initialData.raid}</option></select></label><label>Boss<select value={bossId} onChange={(event) => { chooseBoss(event.target.value); setEditingRule(null); }}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><div><span>Active rules</span><strong>{activeRules.filter((rule) => rule.bossId === bossId).length}</strong></div><button className="share-button" disabled={busy || !activeRules.some((rule) => rule.bossId === bossId)} onClick={reanalyzeBoss} type="button">Recalculate saved pulls</button></div>
           {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}
           <section className="config-grid">
           <article className="panel rules-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Rule library</p><h2>{boss.name}</h2></div><span className="confidence">Config-driven</span></div><div className="rule-list">{rules.filter((rule) => rule.bossId === bossId).sort((a, b) => Number(b.enabled !== false) - Number(a.enabled !== false)).map((rule) => <div className={`rule-row ${rule.enabled === false ? "rule-row-paused" : ""}`} key={rule.id}><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span><div className="rule-identity"><SpellIcon icon={rule.icon} name={rule.name} spellId={rule.spellId} /><div className="rule-copy"><strong>{rule.name}</strong><small><a href={spellReferenceUrl(rule.spellId)} rel="noreferrer" target="_blank">Spell {rule.spellId}</a> · {rule.category}</small><p>{rule.roles.join(", ")} · {rule.difficulties.join(", ")}{rule.condition.note ? ` · ${rule.condition.note}` : ""}</p></div></div><div className="rule-controls"><b>{rule.enabled === false ? "Paused" : ruleEffect(rule)}</b><div><button disabled={busy} onClick={() => editRule(rule)} type="button">Edit</button><button disabled={busy} onClick={() => duplicateRule(rule)} type="button">Duplicate</button><button disabled={busy} onClick={() => toggleRule(rule)} type="button">{rule.enabled === false ? "Restore" : "Pause"}</button></div></div></div>)}{!rules.some((rule) => rule.bossId === bossId) && <div className="empty-rules">No rules for this boss yet. Add the first one beside this list.</div>}</div></article>
-          <form className="panel rule-form" key={editingRule?.id ?? "new-rule"} onSubmit={addRule}><p className="eyebrow"><span /> {editingRule ? editingRule.name.endsWith(" copy") ? "Duplicate mechanic rule" : "Edit mechanic rule" : "New mechanic rule"}</p><div className="rule-form-heading"><h2>{editingRule ? editingRule.name.endsWith(" copy") ? "Create a safe copy" : "Adjust this rule" : "Teach the analyzer"}</h2>{editingRule && <button onClick={() => { setEditingRule(null); setRuleStatus(""); }} type="button">Cancel</button>}</div><div className="form-pair"><label>Mechanic name<input defaultValue={editingRule?.name} name="name" placeholder="e.g. Gilded Wave" required /></label><label>Spell ID<input defaultValue={editingRule?.spellId} name="spellId" inputMode="numeric" placeholder="451117" required /></label></div><div className="form-pair"><label>Category<select name="category" defaultValue={editingRule?.category ?? "Avoidable damage"}><option>Avoidable damage</option><option>Mechanic failure</option><option>Interrupt</option><option>Dispel</option><option>Defensive</option><option>Soak</option><option>Utility</option></select></label><label>Event type<select name="eventType" defaultValue={editingRule?.eventType ?? "damage"}><option>damage</option><option>debuff</option><option>cast</option><option>interrupt</option><option>dispel</option><option>death</option></select></label></div><div className="form-pair"><label>Score effect<select name="scoringMode" defaultValue={editingRule ? scoringMode(editingRule) : "penalty"}><option value="penalty">Penalty · lowers Mechanics</option><option value="success">Success · evidence only</option><option value="context">Raid context · no player score</option></select></label><label>Penalty weight<input defaultValue={editingRule?.weight ?? 4} name="weight" inputMode="decimal" required /></label></div><div className="form-pair"><label>Severity<select name="severity" defaultValue={editingRule?.severity ?? "Medium"}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Maximum matches per pull<input defaultValue={editingRule?.condition.maxOccurrencesPerPull} name="maxOccurrencesPerPull" inputMode="numeric" placeholder="No limit" /></label></div><fieldset><legend>Applies on</legend>{["Normal", "Heroic", "Mythic"].map((difficulty) => <label key={difficulty}><input defaultChecked={editingRule ? editingRule.difficulties.includes(difficulty) : difficulty !== "Normal"} name="difficulty" type="checkbox" value={difficulty} /> {difficulty}</label>)}</fieldset><fieldset><legend>Roles</legend>{["Tank", "Healer", "DPS"].map((role) => <label key={role}><input defaultChecked={editingRule ? editingRule.roles.includes(role) : true} name="role" type="checkbox" value={role} /> {role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}</label>)}</fieldset><details><summary>Optional conditions</summary><label>Minimum amount<input defaultValue={editingRule?.condition.minAmount} name="minAmount" inputMode="numeric" placeholder="50000" /></label><label className="checkline"><input defaultChecked={editingRule?.condition.countOncePerCast} name="countOnce" type="checkbox" /> Count once per cast</label><label className="checkline"><input defaultChecked={editingRule?.condition.ignoreTanks} name="ignoreTanks" type="checkbox" /> Ignore tanks</label><label>Rule note<textarea defaultValue={editingRule?.condition.note} name="note" placeholder="Ignore the first unavoidable tick…" /></label></details><button className="primary-button" disabled={busy} type="submit">{editingRule ? editingRule.name.endsWith(" copy") ? "Save duplicate rule" : "Save rule changes" : "Save mechanic rule"}</button></form>
+          <form className="panel rule-form" key={editingRule?.id ?? "new-rule"} onSubmit={addRule}><p className="eyebrow"><span /> {editingRule ? editingRule.name.endsWith(" copy") ? "Duplicate mechanic rule" : "Edit mechanic rule" : "New mechanic rule"}</p><div className="rule-form-heading"><h2>{editingRule ? editingRule.name.endsWith(" copy") ? "Create a safe copy" : "Adjust this rule" : "Teach the analyzer"}</h2>{editingRule && <button onClick={() => { setEditingRule(null); setRuleStatus(""); }} type="button">Cancel</button>}</div><p className="rule-score-explainer">Mechanics starts at 100. A penalty subtracts these exact points for every matching event, up to the optional match cap. Severity is the readable label; it does not secretly change the math.</p><div className="form-pair"><label>Mechanic name<input defaultValue={editingRule?.name} name="name" placeholder="e.g. Gilded Wave" required /></label><label>Spell ID<input defaultValue={editingRule?.spellId} name="spellId" inputMode="numeric" placeholder="451117" required /></label></div><div className="form-pair"><label>Category<select name="category" defaultValue={editingRule?.category ?? "Avoidable damage"}><option>Avoidable damage</option><option>Mechanic failure</option><option>Interrupt</option><option>Dispel</option><option>Defensive</option><option>Soak</option><option>Utility</option></select></label><label>Event type<select name="eventType" defaultValue={editingRule?.eventType ?? "damage"}><option>damage</option><option>debuff</option><option>cast</option><option>interrupt</option><option>dispel</option><option>death</option></select></label></div><div className="form-pair"><label>Score effect<select name="scoringMode" defaultValue={editingRule ? scoringMode(editingRule) : "penalty"}><option value="penalty">Penalty · lowers Mechanics</option><option value="success">Success · evidence only</option><option value="context">Raid context · no player score</option></select></label><label>Points per matching event<input defaultValue={editingRule?.weight ?? 4} name="weight" inputMode="decimal" required /></label></div><div className="form-pair"><label>Severity label<select name="severity" defaultValue={editingRule?.severity ?? "Medium"}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Maximum matches per pull<input defaultValue={editingRule?.condition.maxOccurrencesPerPull} name="maxOccurrencesPerPull" inputMode="numeric" placeholder="No limit" /></label></div><fieldset><legend>Applies on</legend>{["Normal", "Heroic", "Mythic"].map((difficulty) => <label key={difficulty}><input defaultChecked={editingRule ? editingRule.difficulties.includes(difficulty) : difficulty !== "Normal"} name="difficulty" type="checkbox" value={difficulty} /> {difficulty}</label>)}</fieldset><fieldset><legend>Roles</legend>{["Tank", "Healer", "DPS"].map((role) => <label key={role}><input defaultChecked={editingRule ? editingRule.roles.includes(role) : true} name="role" type="checkbox" value={role} /> {role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}</label>)}</fieldset><details><summary>Optional conditions</summary><label>Minimum amount<input defaultValue={editingRule?.condition.minAmount} name="minAmount" inputMode="numeric" placeholder="50000" /></label><label className="checkline"><input defaultChecked={editingRule?.condition.countOncePerCast} name="countOnce" type="checkbox" /> Count once per cast</label><label className="checkline"><input defaultChecked={editingRule?.condition.ignoreTanks} name="ignoreTanks" type="checkbox" /> Ignore tanks</label><label>Rule note<textarea defaultValue={editingRule?.condition.note} name="note" placeholder="Ignore the first unavoidable tick…" /></label></details><button className="primary-button" disabled={busy} type="submit">{editingRule ? editingRule.name.endsWith(" copy") ? "Save duplicate rule" : "Save rule changes" : "Save mechanic rule"}</button></form>
           </section>
         </div>}
         {configureSection === "access" && <div aria-labelledby="configure-access-tab" className="configure-section" id="configure-access" role="tabpanel"><AccessManager members={rosterMembers} /></div>}
