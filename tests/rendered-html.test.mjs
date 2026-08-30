@@ -153,6 +153,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   const officerNotes = await readFile(new URL("../lib/officer-notes.ts", import.meta.url), "utf8");
   const coachingNotes = await readFile(new URL("../app/components/CoachingNotes.tsx", import.meta.url), "utf8");
   const officerNotesPanel = await readFile(new URL("../app/components/OfficerNotesPanel.tsx", import.meta.url), "utf8");
+  const officerHistoryApi = await readFile(new URL("../app/api/officer-history/route.ts", import.meta.url), "utf8");
+  const officerHistoryRoster = await readFile(new URL("../app/components/OfficerHistoryRoster.tsx", import.meta.url), "utf8");
   const notesMigration = await readFile(new URL("../drizzle/0009_careless_jackpot.sql", import.meta.url), "utf8");
   assert.match(privateDashboard, /Raid night/);
   assert.match(privateDashboard, /Boss/);
@@ -203,6 +205,18 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(officerNotesPanel, /Player-visible/);
   assert.match(officerNotesPanel, /Officers only/);
   assert.match(officerNotesPanel, /This pull/);
+  assert.match(app, /See the whole season, clearly/);
+  assert.match(app, /OfficerHistoryRoster/);
+  assert.doesNotMatch(app, /<article className="panel roster-panel"/);
+  assert.match(officerHistoryApi, /COALESCE\(pi\.identity_id, p\.id\)/);
+  assert.match(officerHistoryApi, /AVG\(NULLIF\(pp\.performance_score, 0\)\)/);
+  assert.match(officerHistoryApi, /pu\.killed = 1/);
+  assert.match(officerHistoryApi, /COUNT\(DISTINCT rn\.id\)/);
+  assert.match(officerHistoryRoster, /Season roster history/);
+  assert.match(officerHistoryRoster, /aria-expanded/);
+  assert.match(officerHistoryRoster, /Season averages with every saved kill underneath/);
+  assert.match(officerHistoryRoster, /Notes here stay attached to this exact kill/);
+  assert.match(officerHistoryRoster, /scope: "pull"/);
   assert.match(coachingNotes, /audience === "officer"/);
   assert.match(notesMigration, /CREATE TABLE `officer_notes`/);
   assert.match(notesMigration, /`visibility` text DEFAULT 'player'/);
@@ -210,7 +224,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(runs, /DELETE FROM officer_notes WHERE raid_night_id/);
   assert.match(importJobs, /UPDATE officer_notes SET pull_id/);
   assert.match(identities, /UPDATE officer_notes SET player_id/);
-  for (const privateRoute of [importer, importJobs, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi]) assert.match(privateRoute, /getOfficerSession/);
+  for (const privateRoute of [importer, importJobs, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);
   assert.match(schema, /officerSessions/);
 });

@@ -3,9 +3,10 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, OfficerNote, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
+import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, OfficerNote, OfficerPlayerHistory, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
 import { CoachingNotes } from "./CoachingNotes";
-import { OfficerNotesPanel, type NoteEditorPayload } from "./OfficerNotesPanel";
+import { OfficerHistoryRoster } from "./OfficerHistoryRoster";
+import type { NoteEditorPayload } from "./OfficerNotesPanel";
 
 type View = "home" | "player" | "officer" | "configure";
 type ConfigureSection = "raid-data" | "people" | "scoring" | "access";
@@ -236,6 +237,10 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [identityStatus, setIdentityStatus] = useState("");
   const [notesStatus, setNotesStatus] = useState("");
   const [notes, setNotes] = useState<OfficerNote[]>([]);
+  const [notesForPlayerId, setNotesForPlayerId] = useState("");
+  const [officerHistory, setOfficerHistory] = useState<OfficerPlayerHistory[]>([]);
+  const [officerHistoryLoading, setOfficerHistoryLoading] = useState(true);
+  const [expandedOfficerPlayerId, setExpandedOfficerPlayerId] = useState<string | null>(null);
   const [runNights, setRunNights] = useState<RaidNightRecord[]>([]);
   const [history, setHistory] = useState<PlayerHistoryPoint[]>([]);
   const [linkedCharacters, setLinkedCharacters] = useState<string[]>([]);
@@ -294,6 +299,17 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   useEffect(() => {
     if (accessState !== "granted") return;
     let active = true;
+    fetch("/api/officer-history", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ players: OfficerPlayerHistory[] }> : null)
+      .then((result) => { if (active) setOfficerHistory(result?.players ?? []); })
+      .catch(() => { if (active) setOfficerHistory([]); })
+      .finally(() => { if (active) setOfficerHistoryLoading(false); });
+    return () => { active = false; };
+  }, [accessState, historyRevision]);
+
+  useEffect(() => {
+    if (accessState !== "granted") return;
+    let active = true;
     fetch("/api/runs")
       .then(async (response) => response.ok ? response.json() as Promise<{ raidNights: RaidNightRecord[] }> : null)
       .then((result) => { if (active && result?.raidNights) setRunNights(result.raidNights); })
@@ -321,8 +337,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     let active = true;
     fetch(`/api/notes?playerId=${encodeURIComponent(playerId)}`, { cache: "no-store" })
       .then(async (response) => response.ok ? response.json() as Promise<{ notes: OfficerNote[] }> : null)
-      .then((result) => { if (active) setNotes(result?.notes ?? []); })
-      .catch(() => { if (active) setNotes([]); });
+      .then((result) => { if (active) { setNotes(result?.notes ?? []); setNotesForPlayerId(playerId); } })
+      .catch(() => { if (active) { setNotes([]); setNotesForPlayerId(playerId); } });
     return () => { active = false; };
   }, [accessState, playerId]);
 
@@ -420,15 +436,13 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const heroHeading = !playerPresent ? "No pull data" : moduleSettings.mechanics
     ? mechanicsScore === null ? "Ready for calibration" : mechanicsScore >= 90 ? "Good pull" : mechanicsScore >= 80 ? "Solid pull" : "Clear next step"
     : moduleSettings.performance ? "Performance checkpoint" : "Modules paused";
-  const comparisonSortKey = moduleSettings.mechanics ? "mechanics" : activeScoreKeys[0];
-
   const officerSummary = useMemo(() => {
     const average = (key: ScoreKey) => {
-      const values = activePlayers.map((candidate) => candidate.scores[key]).filter((value): value is number => value !== null);
+      const values = officerHistory.map((candidate) => candidate.scores[key]).filter((value): value is number => value !== null);
       return values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
     };
     return { mechanics: average("mechanics"), performance: average("performance"), attendance: average("attendance"), preparation: average("preparation") };
-  }, [activePlayers]);
+  }, [officerHistory]);
 
   function chooseBoss(nextBoss: string) {
     setBossId(nextBoss);
@@ -641,17 +655,18 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     finally { setBusy(false); }
   }
 
-  async function saveOfficerNote(payload: NoteEditorPayload) {
+  async function saveOfficerNote(targetPlayerId: string, payload: NoteEditorPayload) {
     setBusy(true); setNotesStatus(payload.id ? "Updating the coaching note…" : "Saving coaching context…");
     try {
       const response = await fetch("/api/notes", {
         method: payload.id ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, playerId }),
+        body: JSON.stringify({ ...payload, playerId: targetPlayerId }),
       });
       const result = await response.json() as { error?: string; notes?: OfficerNote[] };
       if (!response.ok) throw new Error(result.error ?? "The coaching note could not be saved.");
       setNotes(result.notes ?? []);
+      setNotesForPlayerId(targetPlayerId);
       setNotesStatus(payload.visibility === "player" ? "Saved. This note is live on the player’s private link." : "Saved for officers only. It will never be sent to the player link.");
       return true;
     } catch (error) {
@@ -660,14 +675,15 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     } finally { setBusy(false); }
   }
 
-  async function deleteOfficerNote(note: OfficerNote) {
+  async function deleteOfficerNote(targetPlayerId: string, note: OfficerNote) {
     if (!window.confirm(`Remove this ${note.visibility === "player" ? "player-visible" : "officer-only"} coaching note? This cannot be undone.`)) return;
     setBusy(true); setNotesStatus("Removing the coaching note…");
     try {
-      const response = await fetch("/api/notes", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: note.id, playerId }) });
+      const response = await fetch("/api/notes", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: note.id, playerId: targetPlayerId }) });
       const result = await response.json() as { error?: string; notes?: OfficerNote[] };
       if (!response.ok) throw new Error(result.error ?? "The coaching note could not be removed.");
       setNotes(result.notes ?? []);
+      setNotesForPlayerId(targetPlayerId);
       setNotesStatus("The coaching note was removed.");
     } catch (error) { setNotesStatus(error instanceof Error ? error.message : "The coaching note could not be removed."); }
     finally { setBusy(false); }
@@ -812,7 +828,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
           <p><span className="live-dot" /> {boss.name} · {activeRules.filter((rule) => rule.bossId === boss.id).length} active rules · {pullOptions.length} pulls</p>
         </div>
-        <CoachingNotes notes={notes} raidNightId={initialData.raidNightId} bossId={boss.id} pullId={pull?.id} audience="officer" />
+        <CoachingNotes notes={notesForPlayerId === playerId ? notes : []} raidNightId={initialData.raidNightId} bossId={boss.id} pullId={pull?.id} audience="officer" />
         <div className="player-tabs" role="tablist" aria-label="Player dashboard sections"><button aria-selected={playerTab === "review"} className={playerTab === "review" ? "active" : ""} onClick={() => setPlayerTab("review")} role="tab" type="button">Raid review</button><button aria-selected={playerTab === "history"} className={playerTab === "history" ? "active" : ""} onClick={() => { setPlayerTab("history"); setActiveScore(null); }} role="tab" type="button">History</button></div>
         {playerTab === "review" && <>
         <section className={`score-grid score-grid-${activeScoreKeys.length}`} aria-label="Player scores">
@@ -859,13 +875,12 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
       {view === "officer" && <section className="dashboard officer-view" id="officer">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={openNewImport}>Add raid reports</button></div>
-        <div className="section-hero"><div><h1>See the whole roster, clearly.</h1><p>{activeScoreKeys.length} active independent signal{activeScoreKeys.length === 1 ? "" : "s"}. Paused modules stay out of comparisons until you turn them back on.</p></div><div className="hierarchy-note"><small>Current scope</small><strong>{initialData.season}</strong><span>Season → Night → Report → Boss → Pull → Player</span></div></div>
+        <div className="section-hero"><div><h1>See the whole season, clearly.</h1><p>{activeScoreKeys.length} active independent signal{activeScoreKeys.length === 1 ? "" : "s"}, averaged across every included raid night. Open any raider to compare their bosses and review individual kills.</p></div><div className="hierarchy-note"><small>Officer scope</small><strong>{initialData.season}</strong><span>Raider → Boss averages → Individual kills → Notes</span></div></div>
         <section className={`officer-summary officer-summary-${activeScoreKeys.length}`}>{activeScoreKeys.map((key) => {
           const value = officerSummary[key];
-          return <article key={key}><span>{scoreLabels[key]} average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not public" : key === "attendance" ? "First tracked night" : "Real snapshot"}</small></article>;
+          return <article key={key}><span>{scoreLabels[key]} roster average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not available" : key === "attendance" ? "All included nights" : "Season history"}</small></article>;
         })}{activeScoreKeys.length === 0 && <article className="module-empty"><span>All score modules are paused</span><small>Roster data remains available.</small></article>}</section>
-        <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th>{activeScoreKeys.map((key) => <th key={key}>{scoreLabels[key]}</th>)}<th>Review</th></tr></thead><tbody>{[...activePlayers].sort((a, b) => comparisonSortKey ? (b.scores[comparisonSortKey] ?? -1) - (a.scores[comparisonSortKey] ?? -1) : a.name.localeCompare(b.name)).map((candidate) => { const needsReview = activeScoreKeys.some((key) => candidate.scores[key] !== null && candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{activeScoreKeys.map((key) => { const value = candidate.scores[key]; return <td key={key}><span className={`table-score ${value !== null && value >= 90 ? "high" : value !== null && value < 80 ? "low" : ""}`}>{value ?? "—"}</span></td>; })}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
-        <OfficerNotesPanel key={playerId} players={rosterMembers} playerId={playerId} playerName={rosterPlayer.name} notes={notes} raidNightId={initialData.raidNightId} raidNightName={initialData.raidNight} bossId={boss.id} bossName={boss.name} pullId={pull?.id} pullLabel={pull?.label} busy={busy} status={notesStatus} onPlayerChange={(nextPlayerId) => { setNotesStatus(""); setPlayerId(nextPlayerId); }} onSave={saveOfficerNote} onDelete={deleteOfficerNote} />
+        <OfficerHistoryRoster key={expandedOfficerPlayerId ?? "closed"} players={officerHistory} activeKeys={activeScoreKeys} expandedPlayerId={expandedOfficerPlayerId} notes={notesForPlayerId === expandedOfficerPlayerId ? notes : []} busy={busy} loading={officerHistoryLoading} status={notesStatus} onTogglePlayer={(nextPlayerId) => { setNotesStatus(""); if (expandedOfficerPlayerId === nextPlayerId) { setExpandedOfficerPlayerId(null); return; } setExpandedOfficerPlayerId(nextPlayerId); setPlayerId(nextPlayerId); }} onSaveNote={saveOfficerNote} onDeleteNote={deleteOfficerNote} />
         <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
       </section>}
 

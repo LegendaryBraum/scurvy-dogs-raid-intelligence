@@ -104,6 +104,48 @@ export type OfficerNote = {
   updatedAt: string;
 };
 
+export type OfficerHistoryKill = {
+  pullId: string;
+  raidNightId: string;
+  raidNightName: string;
+  happenedAt: string;
+  difficulty: string;
+  characterName: string;
+  spec: string;
+  scores: Record<ScoreKey, ScoreValue>;
+  parse: number | null;
+  ilvlParse: number | null;
+  dps: number | null;
+  hps: number | null;
+};
+
+export type OfficerBossHistory = {
+  bossId: string;
+  bossName: string;
+  pulls: number;
+  kills: number;
+  lastSeenAt: string;
+  scores: Record<ScoreKey, ScoreValue>;
+  averageDps: number | null;
+  averageHps: number | null;
+  killHistory: OfficerHistoryKill[];
+};
+
+export type OfficerPlayerHistory = {
+  playerId: string;
+  name: string;
+  realm: string;
+  className: string;
+  spec: string;
+  role: "Tank" | "Healer" | "DPS";
+  pulls: number;
+  nightsAttended: number;
+  totalRaidNights: number;
+  lastSeenAt: string;
+  scores: Record<ScoreKey, ScoreValue>;
+  bosses: OfficerBossHistory[];
+};
+
 export type OfficerAccessRecord = {
   id: string;
   name: string;
