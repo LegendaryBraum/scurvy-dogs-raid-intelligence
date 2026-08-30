@@ -89,6 +89,21 @@ export type PlayerHistoryPoint = {
   hps: number | null;
 };
 
+export type OfficerNote = {
+  id: string;
+  playerId: string;
+  authorName: string;
+  visibility: "player" | "officer";
+  scope: "player" | "raid_night" | "boss" | "pull";
+  scopeLabel: string;
+  body: string;
+  raidNightId: string | null;
+  bossId: string | null;
+  pullId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type OfficerAccessRecord = {
   id: string;
   name: string;
@@ -180,5 +195,6 @@ export type PrivatePlayerWorkspace = {
   linkedCharacters: string[];
   dashboard: DashboardData;
   history: PlayerHistoryPoint[];
+  notes: OfficerNote[];
   pullRaidAverages: Record<string, Record<ScoreKey, ScoreValue>>;
 };

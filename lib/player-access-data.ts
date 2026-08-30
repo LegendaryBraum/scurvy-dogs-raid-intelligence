@@ -1,6 +1,7 @@
 import { ensureSchema } from "../db/runtime";
 import { loadLatestDashboardData } from "./dashboard-data";
 import { loadPlayerHistory } from "./player-history";
+import { loadPlayerVisibleNotes } from "./officer-notes";
 import type { PlayerSnapshot, PrivatePlayerWorkspace, ScoreKey, ScoreValue } from "./types";
 
 type AccessRow = { id: string; name: string; identity_id: string };
@@ -27,7 +28,7 @@ export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNigh
   if (!access) return null;
   await db.prepare("UPDATE player_access_links SET last_used_at = CURRENT_TIMESTAMP WHERE token = ?").bind(token).run();
 
-  const [identityPlayers, nightResult] = await Promise.all([
+  const [identityPlayers, nightResult, notes] = await Promise.all([
     db.prepare(`SELECT p.id FROM players p LEFT JOIN player_identities pi ON pi.player_id = p.id WHERE COALESCE(pi.identity_id, p.id) = ?`).bind(access.identity_id).all<{ id: string }>(),
     db.prepare(`
       SELECT DISTINCT rn.id, rn.name, rn.happened_at, rn.season_id
@@ -41,6 +42,7 @@ export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNigh
       )
       ORDER BY rn.happened_at DESC
     `).bind(access.identity_id).all<NightRow>(),
+    loadPlayerVisibleNotes(db, access.identity_id),
   ]);
   const nights = nightResult.results;
   if (!nights.length) return null;
@@ -70,6 +72,7 @@ export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNigh
     playerName: access.name,
     linkedCharacters: historyData?.linkedCharacters ?? [access.name],
     history: historyData?.history ?? [],
+    notes,
     pullRaidAverages,
     dashboard: {
       ...full,

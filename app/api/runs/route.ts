@@ -97,6 +97,7 @@ async function readRaidNights(db: D1Database) {
 
 async function permanentlyDeleteReport(db: D1Database, reportId: string) {
   await db.batch([
+    db.prepare("DELETE FROM officer_notes WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
@@ -153,6 +154,7 @@ export async function DELETE(request: Request) {
     if (payload.target === "report") {
       await permanentlyDeleteReport(db, payload.id);
     } else {
+      await db.prepare("DELETE FROM officer_notes WHERE raid_night_id = ?").bind(payload.id).run();
       const reports = await db.prepare("SELECT id FROM reports WHERE raid_night_id = ?").bind(payload.id).all<{ id: string }>();
       for (const report of reports.results) await permanentlyDeleteReport(db, report.id);
       await db.prepare("DELETE FROM raid_nights WHERE id = ?").bind(payload.id).run();

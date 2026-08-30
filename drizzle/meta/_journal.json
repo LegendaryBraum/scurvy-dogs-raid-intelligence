@@ -64,6 +64,13 @@
       "when": 1788042368382,
       "tag": "0008_sleepy_skreet",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788067103352,
+      "tag": "0009_careless_jackpot",
+      "breakpoints": true
     }
   ]
 }

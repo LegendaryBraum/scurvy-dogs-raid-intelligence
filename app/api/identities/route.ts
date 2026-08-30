@@ -26,6 +26,7 @@ export async function POST(request: Request) {
         db.prepare("UPDATE player_identities SET identity_id = ?, updated_at = CURRENT_TIMESTAMP WHERE identity_id = ?").bind(target.identity_id, payload.playerId),
         db.prepare("INSERT INTO player_identities (player_id, identity_id, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(player_id) DO UPDATE SET identity_id = excluded.identity_id, updated_at = CURRENT_TIMESTAMP")
           .bind(payload.playerId, target.identity_id),
+        db.prepare("UPDATE officer_notes SET player_id = ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?").bind(target.identity_id, payload.playerId),
       ]);
     }
     return Response.json({ linked: true, playerId: payload.playerId, identityId: payload.playerId === payload.identityId ? payload.playerId : target.identity_id });

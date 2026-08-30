@@ -104,6 +104,7 @@ async function readJob(db: D1Database, id: string) {
 
 async function removeReport(db: D1Database, reportId: string) {
   await db.batch([
+    db.prepare("DELETE FROM officer_notes WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
@@ -172,6 +173,19 @@ async function finalizeJob(db: D1Database, job: ImportJobRow) {
   const statements: D1PreparedStatement[] = [];
   if (existing && existing.id !== job.staging_report_id) {
     statements.push(
+      db.prepare(`UPDATE officer_notes SET pull_id = (
+        SELECT replacement.id
+        FROM pulls original
+        JOIN pulls replacement ON replacement.report_id = ? AND replacement.fight_id = original.fight_id
+        WHERE original.id = officer_notes.pull_id AND original.report_id = ?
+        LIMIT 1
+      ) WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?) AND EXISTS (
+        SELECT 1
+        FROM pulls original
+        JOIN pulls replacement ON replacement.report_id = ? AND replacement.fight_id = original.fight_id
+        WHERE original.id = officer_notes.pull_id AND original.report_id = ?
+      )`).bind(job.staging_report_id, existing.id, existing.id, job.staging_report_id, existing.id),
+      db.prepare("UPDATE officer_notes SET pull_id = NULL WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),

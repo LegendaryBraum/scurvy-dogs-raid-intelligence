@@ -3,7 +3,9 @@
 /* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
+import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, OfficerNote, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
+import { CoachingNotes } from "./CoachingNotes";
+import { OfficerNotesPanel, type NoteEditorPayload } from "./OfficerNotesPanel";
 
 type View = "home" | "player" | "officer" | "configure";
 type ConfigureSection = "raid-data" | "people" | "scoring" | "access";
@@ -232,6 +234,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [rosterStatus, setRosterStatus] = useState("");
   const [runStatus, setRunStatus] = useState("");
   const [identityStatus, setIdentityStatus] = useState("");
+  const [notesStatus, setNotesStatus] = useState("");
+  const [notes, setNotes] = useState<OfficerNote[]>([]);
   const [runNights, setRunNights] = useState<RaidNightRecord[]>([]);
   const [history, setHistory] = useState<PlayerHistoryPoint[]>([]);
   const [linkedCharacters, setLinkedCharacters] = useState<string[]>([]);
@@ -311,6 +315,16 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       .finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
   }, [accessState, historyRevision, playerId]);
+
+  useEffect(() => {
+    if (accessState !== "granted" || !playerId) return;
+    let active = true;
+    fetch(`/api/notes?playerId=${encodeURIComponent(playerId)}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ notes: OfficerNote[] }> : null)
+      .then((result) => { if (active) setNotes(result?.notes ?? []); })
+      .catch(() => { if (active) setNotes([]); });
+    return () => { active = false; };
+  }, [accessState, playerId]);
 
   useEffect(() => {
     if (accessState !== "granted" || view !== "configure" || configureSection !== "scoring") return;
@@ -627,6 +641,38 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     finally { setBusy(false); }
   }
 
+  async function saveOfficerNote(payload: NoteEditorPayload) {
+    setBusy(true); setNotesStatus(payload.id ? "Updating the coaching note…" : "Saving coaching context…");
+    try {
+      const response = await fetch("/api/notes", {
+        method: payload.id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, playerId }),
+      });
+      const result = await response.json() as { error?: string; notes?: OfficerNote[] };
+      if (!response.ok) throw new Error(result.error ?? "The coaching note could not be saved.");
+      setNotes(result.notes ?? []);
+      setNotesStatus(payload.visibility === "player" ? "Saved. This note is live on the player’s private link." : "Saved for officers only. It will never be sent to the player link.");
+      return true;
+    } catch (error) {
+      setNotesStatus(error instanceof Error ? error.message : "The coaching note could not be saved.");
+      return false;
+    } finally { setBusy(false); }
+  }
+
+  async function deleteOfficerNote(note: OfficerNote) {
+    if (!window.confirm(`Remove this ${note.visibility === "player" ? "player-visible" : "officer-only"} coaching note? This cannot be undone.`)) return;
+    setBusy(true); setNotesStatus("Removing the coaching note…");
+    try {
+      const response = await fetch("/api/notes", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: note.id, playerId }) });
+      const result = await response.json() as { error?: string; notes?: OfficerNote[] };
+      if (!response.ok) throw new Error(result.error ?? "The coaching note could not be removed.");
+      setNotes(result.notes ?? []);
+      setNotesStatus("The coaching note was removed.");
+    } catch (error) { setNotesStatus(error instanceof Error ? error.message : "The coaching note could not be removed."); }
+    finally { setBusy(false); }
+  }
+
   async function addRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setRuleStatus("Saving rule…");
     const formElement = event.currentTarget;
@@ -766,6 +812,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
           <p><span className="live-dot" /> {boss.name} · {activeRules.filter((rule) => rule.bossId === boss.id).length} active rules · {pullOptions.length} pulls</p>
         </div>
+        <CoachingNotes notes={notes} raidNightId={initialData.raidNightId} bossId={boss.id} pullId={pull?.id} audience="officer" />
         <div className="player-tabs" role="tablist" aria-label="Player dashboard sections"><button aria-selected={playerTab === "review"} className={playerTab === "review" ? "active" : ""} onClick={() => setPlayerTab("review")} role="tab" type="button">Raid review</button><button aria-selected={playerTab === "history"} className={playerTab === "history" ? "active" : ""} onClick={() => { setPlayerTab("history"); setActiveScore(null); }} role="tab" type="button">History</button></div>
         {playerTab === "review" && <>
         <section className={`score-grid score-grid-${activeScoreKeys.length}`} aria-label="Player scores">
@@ -818,6 +865,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           return <article key={key}><span>{scoreLabels[key]} average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not public" : key === "attendance" ? "First tracked night" : "Real snapshot"}</small></article>;
         })}{activeScoreKeys.length === 0 && <article className="module-empty"><span>All score modules are paused</span><small>Roster data remains available.</small></article>}</section>
         <article className="panel roster-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Roster comparison</p><h2>{boss.name} · {pull?.label}</h2></div><div className="legend"><span><i className="good-dot" /> 90+</span><span><i className="watch-dot" /> Below 80</span></div></div><div className="table-scroll"><table><thead><tr><th>Player</th><th>Role</th>{activeScoreKeys.map((key) => <th key={key}>{scoreLabels[key]}</th>)}<th>Review</th></tr></thead><tbody>{[...activePlayers].sort((a, b) => comparisonSortKey ? (b.scores[comparisonSortKey] ?? -1) - (a.scores[comparisonSortKey] ?? -1) : a.name.localeCompare(b.name)).map((candidate) => { const needsReview = activeScoreKeys.some((key) => candidate.scores[key] !== null && candidate.scores[key] < 80); return <tr key={candidate.id}><td><button className="player-cell" type="button" onClick={() => { setPlayerId(candidate.id); setView("player"); }}><span>{candidate.name.slice(0, 2).toUpperCase()}</span><strong>{candidate.name}<small>{candidate.spec} {candidate.className}</small></strong></button></td><td>{candidate.role}</td>{activeScoreKeys.map((key) => { const value = candidate.scores[key]; return <td key={key}><span className={`table-score ${value !== null && value >= 90 ? "high" : value !== null && value < 80 ? "low" : ""}`}>{value ?? "—"}</span></td>; })}<td><span className={`review-chip ${needsReview ? "attention" : "clear"}`}>{needsReview ? "Needs context" : "Clear"}</span></td></tr>; })}</tbody></table></div></article>
+        <OfficerNotesPanel key={playerId} players={rosterMembers} playerId={playerId} playerName={rosterPlayer.name} notes={notes} raidNightId={initialData.raidNightId} raidNightName={initialData.raidNight} bossId={boss.id} bossName={boss.name} pullId={pull?.id} pullLabel={pull?.label} busy={busy} status={notesStatus} onPlayerChange={(nextPlayerId) => { setNotesStatus(""); setPlayerId(nextPlayerId); }} onSave={saveOfficerNote} onDelete={deleteOfficerNote} />
         <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
       </section>}
 

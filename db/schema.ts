@@ -128,6 +128,22 @@ export const playerAccessLinks = sqliteTable("player_access_links", {
   revokedAt: text("revoked_at"),
 }, (table) => [index("idx_player_access_links_player").on(table.playerId, table.revokedAt)]);
 
+export const officerNotes = sqliteTable("officer_notes", {
+  id: text("id").primaryKey(),
+  playerId: text("player_id").notNull().references(() => players.id),
+  authorOfficerId: text("author_officer_id").notNull().references(() => officers.id),
+  raidNightId: text("raid_night_id").references(() => raidNights.id),
+  bossId: text("boss_id").references(() => bosses.id),
+  pullId: text("pull_id").references(() => pulls.id),
+  visibility: text("visibility").notNull().default("player"),
+  body: text("body").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_officer_notes_player_visibility").on(table.playerId, table.visibility, table.createdAt),
+  index("idx_officer_notes_pull").on(table.pullId),
+]);
+
 export const pullPlayers = sqliteTable("pull_players", {
   id: text("id").primaryKey(), pullId: text("pull_id").notNull().references(() => pulls.id),
   playerId: text("player_id").notNull().references(() => players.id), spec: text("spec").notNull().default("Unknown"),
