@@ -5,8 +5,10 @@ export const runtime = "edge";
 export async function GET(request: Request, context: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await context.params;
-    const raidNightId = new URL(request.url).searchParams.get("raidNightId");
-    const workspace = await loadPrivatePlayerWorkspace(token, raidNightId);
+    const url = new URL(request.url);
+    const raidNightId = url.searchParams.get("raidNightId");
+    const difficulty = url.searchParams.get("difficulty");
+    const workspace = await loadPrivatePlayerWorkspace(token, raidNightId, difficulty);
     if (!workspace) return Response.json({ error: "This player link is unavailable or has been revoked." }, { status: 404, headers: { "Cache-Control": "no-store" } });
     return Response.json({ workspace }, { headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow" } });
   } catch (error) {

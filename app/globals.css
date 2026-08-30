@@ -77,7 +77,7 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .context-chip strong { font-size: 20px; }
 .context-chip small { align-self: center; color: var(--teal); font-weight: 800; }
 
-.filters { margin: 34px 0 14px; padding: 13px; display: grid; grid-template-columns: 1.2fr 1.15fr 1fr .9fr auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76); box-shadow: 0 9px 26px rgba(26, 60, 64, .04); }
+.filters { margin: 34px 0 14px; padding: 13px; display: grid; grid-template-columns: 1.2fr 1.15fr 1fr .75fr .9fr auto; align-items: end; gap: 10px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.76); box-shadow: 0 9px 26px rgba(26, 60, 64, .04); }
 .filters label { color: #718087; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .filters select { width: 100%; margin-top: 6px; padding: 9px 33px 9px 10px; border: 0; border-radius: 7px; outline: 1px solid #d8e2e2; background: #fff; color: #20363e; font-size: 12px; font-weight: 700; }
 .filters p { margin: 0 5px 10px 12px; color: #829095; font-size: 10px; white-space: nowrap; }
@@ -228,6 +228,12 @@ h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp
 .officer-summary span { font-size: 10px; font-weight: 750; }
 .officer-summary strong { grid-row: 1 / 3; grid-column: 2; font-family: Georgia, serif; font-size: 28px; font-weight: 500; }
 .officer-summary small { color: #79898e; font-size: 8px; text-transform: uppercase; }
+.officer-history-controls { margin: 18px 0 14px; padding: 13px; display: grid; grid-template-columns: minmax(190px, .35fr) 1fr; align-items: end; gap: 14px; border: 1px solid var(--line); border-radius: 13px; background: rgba(255,255,255,.76); box-shadow: 0 8px 22px rgba(26, 60, 64, .035); }
+.officer-history-controls label { color: #728187; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.officer-history-controls select { width: 100%; margin-top: 6px; padding: 10px 34px 10px 10px; border: 1px solid #d7e1e1; border-radius: 8px; outline: none; color: #263f47; background: #fbfcfc; font-size: 11px; font-weight: 650; }
+.officer-history-controls select:focus { border-color: #78b4a5; box-shadow: 0 0 0 3px rgba(39, 132, 108, .1); }
+.officer-history-controls select:disabled { cursor: wait; opacity: .65; }
+.officer-history-controls p { margin: 0 0 2px; display: flex; align-items: center; gap: 7px; color: #718287; font-size: 9px; line-height: 1.5; }
 .roster-panel { padding-bottom: 12px; }
 .legend { display: flex; gap: 12px; color: #809095; font-size: 8px; font-weight: 700; text-transform: uppercase; }
 .legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; }
@@ -661,7 +667,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .private-full-report { width: min(1180px, calc(100% - 36px)); }
 .private-live-note { color: #52736c; font-size: 8px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
 .private-dashboard-hero { margin-bottom: 10px; }
-.private-filters { grid-template-columns: 1.2fr 1.1fr 1.3fr auto; }
+.private-filters { grid-template-columns: 1.2fr 1.1fr .75fr 1.3fr auto; }
 .private-player-tabs { margin-top: 0; }
 .private-insight-grid { margin-top: 14px; }
 .private-mechanics-panel { margin-top: 14px; }
@@ -697,6 +703,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .section-hero { align-items: start; }
   .hierarchy-note, .engine-note { display: none; }
   .officer-summary { grid-template-columns: 1fr 1fr; }
+  .officer-history-controls { grid-template-columns: 1fr 1fr; }
   .boss-kill-summary { grid-template-columns: minmax(175px, 1.4fr) repeat(3, minmax(58px, .5fr)) auto; }
   .boss-kill-summary > span:nth-of-type(4) { display: none; }
   .roster-manager-heading, .module-manager-heading, .run-manager-heading { align-items: start; }
@@ -716,6 +723,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .hero-row > div > p { font-size: 13px; }
   .filters { grid-template-columns: 1fr; }
   .private-filters { grid-template-columns: 1fr; }
+  .officer-history-controls { grid-template-columns: 1fr; }
   .private-full-report { width: min(100% - 28px, 1180px); padding-top: 32px; }
   .private-dashboard-hero { align-items: start; }
   .private-dashboard-hero .player-seal { display: none; }

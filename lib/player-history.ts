@@ -14,8 +14,9 @@ type HistoryRow = {
 };
 
 function rounded(value: number | null) { return value === null ? null : Math.round(value); }
+const difficultyIds: Record<string, number> = { LFR: 1, Flex: 2, Normal: 3, Heroic: 4, Mythic: 5 };
 
-export async function loadPlayerHistory(playerId: string, selectedSeasonId?: string | null) {
+export async function loadPlayerHistory(playerId: string, selectedSeasonId?: string | null, selectedDifficulty?: string | null) {
   const db = await ensureSchema();
   const identity = await db.prepare("SELECT p.id, p.name, COALESCE(pi.identity_id, p.id) AS identity_id FROM players p LEFT JOIN player_identities pi ON pi.player_id = p.id WHERE p.id = ?")
     .bind(playerId).first<{ id: string; name: string; identity_id: string }>();
@@ -27,6 +28,7 @@ export async function loadPlayerHistory(playerId: string, selectedSeasonId?: str
     ORDER BY rn.happened_at DESC LIMIT 1
   `).first<{ season_id: string }>();
   if (!season) return { history: [] as PlayerHistoryPoint[], linkedCharacters: [identity.name], identityId: identity.identity_id };
+  const difficultyId = selectedDifficulty ? difficultyIds[selectedDifficulty] ?? null : null;
 
   const [historyResult, characterResult] = await Promise.all([
     db.prepare(`
@@ -39,15 +41,21 @@ export async function loadPlayerHistory(playerId: string, selectedSeasonId?: str
              AVG(NULLIF(pp.hps, 0)) AS hps
       FROM raid_nights rn
       JOIN reports r ON r.raid_night_id = rn.id AND r.source_mode = 'live' AND r.included = 1
-      LEFT JOIN pulls pu ON pu.report_id = r.id AND pu.included = 1
+      LEFT JOIN pulls pu ON pu.report_id = r.id AND pu.included = 1 AND (? IS NULL OR pu.difficulty = ?)
       LEFT JOIN pull_players pp ON pp.pull_id = pu.id AND pp.player_id IN (
         SELECT p2.id FROM players p2 LEFT JOIN player_identities pi2 ON pi2.player_id = p2.id
         WHERE COALESCE(pi2.identity_id, p2.id) = ?
       )
       WHERE rn.season_id = ? AND rn.included = 1
+        AND (? IS NULL OR EXISTS (
+          SELECT 1 FROM reports difficulty_report
+          JOIN pulls difficulty_pull ON difficulty_pull.report_id = difficulty_report.id AND difficulty_pull.included = 1
+          WHERE difficulty_report.raid_night_id = rn.id AND difficulty_report.included = 1
+            AND difficulty_report.source_mode = 'live' AND difficulty_pull.difficulty = ?
+        ))
       GROUP BY rn.id, rn.name, rn.happened_at
       ORDER BY rn.happened_at
-    `).bind(identity.identity_id, season.season_id).all<HistoryRow>(),
+    `).bind(difficultyId, difficultyId, identity.identity_id, season.season_id, difficultyId, difficultyId).all<HistoryRow>(),
     db.prepare(`
       SELECT p.name FROM players p LEFT JOIN player_identities pi ON pi.player_id = p.id
       WHERE COALESCE(pi.identity_id, p.id) = ?

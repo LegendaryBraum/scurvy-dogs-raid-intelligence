@@ -15,6 +15,7 @@ type ImportGroup = { id: string; label: string; description: string; kind: "raid
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 type WclAllowance = { state: "checking" | "ready" | "low" | "full" | "unavailable"; percentRemaining?: number; pointsResetIn?: number; error?: string };
 type ImportJob = { id: string; reportCode: string; reportUrl: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
+type DifficultyOption = { value: number; label: string };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
 const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
@@ -166,12 +167,12 @@ function AccessManager({ members }: { members: RosterMember[] }) {
   </article>;
 }
 
-function PlayerHistory({ history, linkedCharacters, activeKeys, loading, player }: { history: PlayerHistoryPoint[]; linkedCharacters: string[]; activeKeys: ScoreKey[]; loading: boolean; player: PlayerSnapshot }) {
+function PlayerHistory({ history, linkedCharacters, activeKeys, loading, player, difficulty }: { history: PlayerHistoryPoint[]; linkedCharacters: string[]; activeKeys: ScoreKey[]; loading: boolean; player: PlayerSnapshot; difficulty: string }) {
   if (loading) return <section className="panel history-empty"><strong>Building {player.name}&apos;s season history…</strong></section>;
   if (!history.length) return <section className="panel history-empty"><strong>No raid-night history yet</strong><p>Import another night to start the week-over-week view.</p></section>;
   const latest = history.at(-1)!;
   const compact = (value: number | null) => value === null ? "—" : value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}m` : value >= 1_000 ? `${Math.round(value / 1_000)}k` : String(value);
-  return <section className="history-view"><article className="panel history-hero"><div><p className="eyebrow"><span /> Season history</p><h2>{history.length === 1 ? "Your first weekly baseline" : `${history.length} raid nights, one clear direction`}</h2><p>{linkedCharacters.length > 1 ? `Attendance combines ${linkedCharacters.join(" and ")}. ` : ""}Scores are rolled up by raid night; raw output stays visible without mixing it into Mechanics.</p></div><div className="history-latest"><small>Latest night</small><strong>{latest.present ? "Present" : "Absent"}</strong><span>{latest.pulls} pull{latest.pulls === 1 ? "" : "s"}</span></div></article><div className="history-score-grid">{activeKeys.map((key) => <article className="panel history-metric" key={key}><div><span>{scoreLabels[key]}</span><strong>{latest.scores[key] ?? "—"}</strong></div><div className="history-bars" aria-label={`${scoreLabels[key]} by raid night`}>{history.map((point) => <span key={point.raidNightId}><i style={{ height: `${point.scores[key] ?? 4}%` }} /><b>{point.scores[key] ?? "—"}</b><small>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</small></span>)}</div></article>)}</div><article className="panel history-table"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Night-by-night</p><h2>Progress without the guesswork</h2></div><span className="confidence">Identity-aware</span></div><div className="table-scroll"><table><thead><tr><th>Raid night</th><th>Present</th><th>Pulls</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>{player.role === "Healer" ? "Avg HPS" : "Avg DPS"}</th></tr></thead><tbody>{[...history].reverse().map((point) => <tr key={point.raidNightId}><td><strong>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{point.label}</small></td><td><span className={`review-chip ${point.present ? "clear" : "attention"}`}>{point.present ? "Yes" : "No"}</span></td><td>{point.pulls}</td><td>{point.scores.mechanics ?? "—"}</td><td>{point.scores.performance ?? "—"}</td><td>{point.scores.attendance ?? "—"}</td><td>{compact(player.role === "Healer" ? point.hps : point.dps)}</td></tr>)}</tbody></table></div><p className="history-note">Compare DPS or HPS on the same boss and spec when judging output. Performance percentiles are the safer overall cross-boss trend.</p></article></section>;
+  return <section className="history-view"><article className="panel history-hero"><div><p className="eyebrow"><span /> {difficulty} season history</p><h2>{history.length === 1 ? `Your first ${difficulty} baseline` : `${history.length} ${difficulty} raid nights, one clear direction`}</h2><p>{linkedCharacters.length > 1 ? `Attendance combines ${linkedCharacters.join(" and ")}. ` : ""}Scores and attendance use only raid nights that contained {difficulty} pulls.</p></div><div className="history-latest"><small>Latest {difficulty} night</small><strong>{latest.present ? "Present" : "Absent"}</strong><span>{latest.pulls} pull{latest.pulls === 1 ? "" : "s"}</span></div></article><div className="history-score-grid">{activeKeys.map((key) => <article className="panel history-metric" key={key}><div><span>{scoreLabels[key]}</span><strong>{latest.scores[key] ?? "—"}</strong></div><div className="history-bars" aria-label={`${scoreLabels[key]} by raid night`}>{history.map((point) => <span key={point.raidNightId}><i style={{ height: `${point.scores[key] ?? 4}%` }} /><b>{point.scores[key] ?? "—"}</b><small>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</small></span>)}</div></article>)}</div><article className="panel history-table"><div className="panel-heading"><div><p className="eyebrow muted"><span /> {difficulty} night-by-night</p><h2>Progress without mixing difficulty stages</h2></div><span className="confidence">Identity-aware</span></div><div className="table-scroll"><table><thead><tr><th>Raid night</th><th>Present</th><th>Pulls</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>{player.role === "Healer" ? "Avg HPS" : "Avg DPS"}</th></tr></thead><tbody>{[...history].reverse().map((point) => <tr key={point.raidNightId}><td><strong>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{point.label}</small></td><td><span className={`review-chip ${point.present ? "clear" : "attention"}`}>{point.present ? "Yes" : "No"}</span></td><td>{point.pulls}</td><td>{point.scores.mechanics ?? "—"}</td><td>{point.scores.performance ?? "—"}</td><td>{point.scores.attendance ?? "—"}</td><td>{compact(player.role === "Healer" ? point.hps : point.dps)}</td></tr>)}</tbody></table></div><p className="history-note">Compare DPS or HPS on the same boss and spec when judging output. Performance percentiles are the safer overall cross-boss trend.</p></article></section>;
 }
 
 function scoringMode(rule: MechanicRule) {
@@ -241,6 +242,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [officerHistory, setOfficerHistory] = useState<OfficerPlayerHistory[]>([]);
   const [officerHistoryLoading, setOfficerHistoryLoading] = useState(true);
   const [expandedOfficerPlayerId, setExpandedOfficerPlayerId] = useState<string | null>(null);
+  const [officerDifficulty, setOfficerDifficulty] = useState("all");
+  const [officerDifficulties, setOfficerDifficulties] = useState<DifficultyOption[]>([]);
   const [runNights, setRunNights] = useState<RaidNightRecord[]>([]);
   const [history, setHistory] = useState<PlayerHistoryPoint[]>([]);
   const [linkedCharacters, setLinkedCharacters] = useState<string[]>([]);
@@ -250,6 +253,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [accessState, setAccessState] = useState<"checking" | "granted" | "denied">("checking");
   const [officerName, setOfficerName] = useState("");
   const requestedIconSets = useRef(new Set<string>());
+  const historyDifficulty = initialData.pulls.find((candidate) => candidate.id === pullId)?.difficulty ?? initialData.pulls[0]?.difficulty ?? "Normal";
 
   function applyDashboard(nextData: DashboardData) {
     const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
@@ -299,13 +303,13 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   useEffect(() => {
     if (accessState !== "granted") return;
     let active = true;
-    fetch("/api/officer-history", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<{ players: OfficerPlayerHistory[] }> : null)
-      .then((result) => { if (active) setOfficerHistory(result?.players ?? []); })
+    fetch(`/api/officer-history?difficulty=${encodeURIComponent(officerDifficulty)}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ players: OfficerPlayerHistory[]; difficulties: DifficultyOption[] }> : null)
+      .then((result) => { if (active) { setOfficerHistory(result?.players ?? []); setOfficerDifficulties(result?.difficulties ?? []); } })
       .catch(() => { if (active) setOfficerHistory([]); })
       .finally(() => { if (active) setOfficerHistoryLoading(false); });
     return () => { active = false; };
-  }, [accessState, historyRevision]);
+  }, [accessState, historyRevision, officerDifficulty]);
 
   useEffect(() => {
     if (accessState !== "granted") return;
@@ -320,7 +324,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   useEffect(() => {
     if (accessState !== "granted") return;
     let active = true;
-    fetch(`/api/history?playerId=${encodeURIComponent(playerId)}`)
+    fetch(`/api/history?playerId=${encodeURIComponent(playerId)}&difficulty=${encodeURIComponent(historyDifficulty)}`)
       .then(async (response) => response.ok ? response.json() as Promise<{ history: PlayerHistoryPoint[]; linkedCharacters: string[] }> : null)
       .then((result) => {
         if (!active) return;
@@ -330,7 +334,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       .catch(() => { if (active) { setHistory([]); setLinkedCharacters([]); } })
       .finally(() => { if (active) setHistoryLoading(false); });
     return () => { active = false; };
-  }, [accessState, historyRevision, playerId]);
+  }, [accessState, historyDifficulty, historyRevision, playerId]);
 
   useEffect(() => {
     if (accessState !== "granted" || !playerId) return;
@@ -404,8 +408,12 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }, [accessState, importOpen]);
 
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
-  const pullOptions = initialData.pulls.filter((pull) => pull.bossId === bossId);
-  const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0];
+  const bossPulls = initialData.pulls.filter((candidate) => candidate.bossId === bossId);
+  const selectedBossPull = bossPulls.find((candidate) => candidate.id === pullId) ?? bossPulls[0];
+  const playerDifficulty = selectedBossPull?.difficulty ?? "Unknown";
+  const playerDifficultyOptions = [...new Set(bossPulls.map((candidate) => candidate.difficulty))];
+  const pullOptions = bossPulls.filter((candidate) => candidate.difficulty === playerDifficulty);
+  const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0] ?? selectedBossPull;
   const activePlayers = initialData.pullPlayers?.[pull?.id ?? pullId] ?? initialData.players;
   const moduleSettings = initialData.moduleSettings ?? defaultModuleSettings;
   const activeScoreKeys = scoreKeys.filter((key) => moduleSettings[key]);
@@ -426,8 +434,9 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const playerEvents = activeEvents.filter((event) => event.playerId === player.id);
   const findings = playerEvents.filter((event) => event.kind === "warning" || event.kind === "death").length;
   const mechanicsScore = moduleSettings.mechanics ? player.scores.mechanics : null;
-  const matchedRules = activeRules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
-  const rulesBySpellId = new Map(activeRules.map((rule) => [rule.spellId, rule]));
+  const applicableBossRules = activeRules.filter((rule) => rule.bossId === boss.id && (!rule.difficulties.length || rule.difficulties.includes(playerDifficulty)));
+  const matchedRules = applicableBossRules.filter((rule) => playerEvents.some((event) => event.spellId === rule.spellId));
+  const rulesBySpellId = new Map(applicableBossRules.map((rule) => [rule.spellId, rule]));
   const heroSummary = !playerPresent ? player.summary : moduleSettings.mechanics
     ? player.summary
     : moduleSettings.performance
@@ -445,8 +454,15 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }, [officerHistory]);
 
   function chooseBoss(nextBoss: string) {
+    const nextPull = initialData.pulls.find((candidate) => candidate.bossId === nextBoss && candidate.difficulty === playerDifficulty) ?? initialData.pulls.find((candidate) => candidate.bossId === nextBoss) ?? initialData.pulls[0];
+    if (nextPull.difficulty !== playerDifficulty) setHistoryLoading(true);
     setBossId(nextBoss);
-    setPullId(initialData.pulls.find((candidate) => candidate.bossId === nextBoss)?.id ?? initialData.pulls[0].id);
+    setPullId(nextPull.id);
+  }
+
+  function choosePlayerDifficulty(nextDifficulty: string) {
+    setHistoryLoading(true);
+    setPullId(bossPulls.find((candidate) => candidate.difficulty === nextDifficulty)?.id ?? pullId);
   }
 
   async function chooseRaidNight(nextRaidNightId: string) {
@@ -825,8 +841,9 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <label>Player<select value={player.id} onChange={(event) => { setHistoryLoading(true); setPlayerId(event.target.value); }}>{rosterMembers.filter((candidate) => candidate.included).map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name} · {candidate.spec} {candidate.className}</option>)}</select></label>
           <label>Raid night<select disabled={busy} value={initialData.raidNightId ?? ""} onChange={(event) => chooseRaidNight(event.target.value)}>{(initialData.raidNights ?? [{ id: initialData.raidNightId ?? "", name: initialData.raidNight, happenedAt: "" }]).map((night) => <option value={night.id} key={night.id}>{night.name}</option>)}</select></label>
           <label>Boss<select value={bossId} onChange={(event) => chooseBoss(event.target.value)}>{initialData.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label>
+          <label>Difficulty<select value={playerDifficulty} onChange={(event) => choosePlayerDifficulty(event.target.value)}>{playerDifficultyOptions.map((candidate) => <option value={candidate} key={candidate}>{candidate}</option>)}</select></label>
           <label>Pull<select value={pull?.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label>
-          <p><span className="live-dot" /> {boss.name} · {activeRules.filter((rule) => rule.bossId === boss.id).length} active rules · {pullOptions.length} pulls</p>
+          <p><span className="live-dot" /> {boss.name} · {playerDifficulty} · {applicableBossRules.length} active rules · {pullOptions.length} pulls</p>
         </div>
         <CoachingNotes notes={notesForPlayerId === playerId ? notes : []} raidNightId={initialData.raidNightId} bossId={boss.id} pullId={pull?.id} audience="officer" />
         <div className="player-tabs" role="tablist" aria-label="Player dashboard sections"><button aria-selected={playerTab === "review"} className={playerTab === "review" ? "active" : ""} onClick={() => setPlayerTab("review")} role="tab" type="button">Raid review</button><button aria-selected={playerTab === "history"} className={playerTab === "history" ? "active" : ""} onClick={() => { setPlayerTab("history"); setActiveScore(null); }} role="tab" type="button">History</button></div>
@@ -870,17 +887,18 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <article className="panel stat-panel"><p className="eyebrow muted"><span /> Pull facts</p><h2>Evidence, not mystery</h2><div className="fact-grid"><span><strong>{player.deaths}</strong><small>Timeline deaths</small></span><span><strong>{player.avoidableDamage >= 1000000 ? `${(player.avoidableDamage / 1000000).toFixed(1)}m` : `${Math.round(player.avoidableDamage / 1000)}k`}</strong><small>Tracked avoidable</small></span><span><strong>{player.interrupts + player.dispels}</strong><small>Dispels / utility</small></span><span><strong>{player.itemLevel ?? "—"}</strong><small>Item level</small></span></div></article>
         </section></>}
         </>}
-        {playerTab === "history" && <PlayerHistory activeKeys={activeScoreKeys} history={history} linkedCharacters={linkedCharacters} loading={historyLoading} player={player} />}
+        {playerTab === "history" && <PlayerHistory activeKeys={activeScoreKeys} difficulty={playerDifficulty} history={history} linkedCharacters={linkedCharacters} loading={historyLoading} player={player} />}
       </section>}
 
       {view === "officer" && <section className="dashboard officer-view" id="officer">
         <div className="eyebrow-row"><p className="eyebrow"><span /> Officer workspace · full roster</p><button className="share-button" type="button" onClick={openNewImport}>Add raid reports</button></div>
         <div className="section-hero"><div><h1>See the whole season, clearly.</h1><p>{activeScoreKeys.length} active independent signal{activeScoreKeys.length === 1 ? "" : "s"}, averaged across every included raid night. Open any raider to compare their bosses and review individual kills.</p></div><div className="hierarchy-note"><small>Officer scope</small><strong>{initialData.season}</strong><span>Raider → Boss averages → Individual kills → Notes</span></div></div>
+        <div className="officer-history-controls"><label>Difficulty stage<select disabled={officerHistoryLoading} value={officerDifficulty} onChange={(event) => { setOfficerHistoryLoading(true); setExpandedOfficerPlayerId(null); setNotesStatus(""); setOfficerDifficulty(event.target.value); }}><option value="all">All difficulties</option>{officerDifficulties.map((candidate) => <option value={candidate.value} key={candidate.value}>{candidate.label}</option>)}</select></label><p><span className="live-dot" /> {officerDifficulty === "all" ? "Combined overview" : `${officerDifficulties.find((candidate) => String(candidate.value) === officerDifficulty)?.label ?? "Selected"} only`} · scores, boss averages, kills, and attendance are kept within this stage</p></div>
         <section className={`officer-summary officer-summary-${activeScoreKeys.length}`}>{activeScoreKeys.map((key) => {
           const value = officerSummary[key];
           return <article key={key}><span>{scoreLabels[key]} roster average</span><strong>{value ?? "N/A"}</strong><small>{value === null ? "Not available" : key === "attendance" ? "All included nights" : "Season history"}</small></article>;
         })}{activeScoreKeys.length === 0 && <article className="module-empty"><span>All score modules are paused</span><small>Roster data remains available.</small></article>}</section>
-        <OfficerHistoryRoster key={expandedOfficerPlayerId ?? "closed"} players={officerHistory} activeKeys={activeScoreKeys} expandedPlayerId={expandedOfficerPlayerId} notes={notesForPlayerId === expandedOfficerPlayerId ? notes : []} busy={busy} loading={officerHistoryLoading} status={notesStatus} onTogglePlayer={(nextPlayerId) => { setNotesStatus(""); if (expandedOfficerPlayerId === nextPlayerId) { setExpandedOfficerPlayerId(null); return; } setExpandedOfficerPlayerId(nextPlayerId); setPlayerId(nextPlayerId); }} onSaveNote={saveOfficerNote} onDeleteNote={deleteOfficerNote} />
+        <OfficerHistoryRoster key={`${officerDifficulty}:${expandedOfficerPlayerId ?? "closed"}`} players={officerHistory} activeKeys={activeScoreKeys} difficultyLabel={officerDifficulty === "all" ? "All-difficulty" : officerDifficulties.find((candidate) => String(candidate.value) === officerDifficulty)?.label ?? "Selected difficulty"} expandedPlayerId={expandedOfficerPlayerId} notes={notesForPlayerId === expandedOfficerPlayerId ? notes : []} busy={busy} loading={officerHistoryLoading} status={notesStatus} onTogglePlayer={(nextPlayerId) => { setNotesStatus(""); if (expandedOfficerPlayerId === nextPlayerId) { setExpandedOfficerPlayerId(null); return; } setExpandedOfficerPlayerId(nextPlayerId); setPlayerId(nextPlayerId); }} onSaveNote={saveOfficerNote} onDeleteNote={deleteOfficerNote} />
         <div className="officer-footnote"><strong>Privacy by workflow</strong><span>Officers compare the full roster here. Player links are generated separately and include only one player plus anonymous averages.</span></div>
       </section>}
 

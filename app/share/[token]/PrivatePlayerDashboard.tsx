@@ -30,11 +30,11 @@ function compact(value: number | null) {
   return String(value);
 }
 
-function HistoryView({ history, player, linkedCharacters, activeKeys }: { history: PlayerHistoryPoint[]; player: PlayerSnapshot; linkedCharacters: string[]; activeKeys: ScoreKey[] }) {
+function HistoryView({ history, player, linkedCharacters, activeKeys, difficulty }: { history: PlayerHistoryPoint[]; player: PlayerSnapshot; linkedCharacters: string[]; activeKeys: ScoreKey[]; difficulty: string }) {
   const latest = history.at(-1);
   if (!latest) return <section className="panel history-empty"><strong>No raid-night history yet</strong><p>The first included night will appear here automatically.</p></section>;
   return <section className="history-view private-history-view">
-    <article className="panel history-hero"><div><p className="eyebrow"><span /> Season history</p><h2>{history.length === 1 ? "Your first weekly baseline" : `${history.length} raid nights, one clear timeline`}</h2><p>{linkedCharacters.length > 1 ? `Attendance combines ${linkedCharacters.join(" and ")}. ` : ""}Every value below belongs only to this raider identity.</p></div><div className="history-latest"><small>Latest night</small><strong>{latest.present ? "Present" : "Absent"}</strong><span>{latest.pulls} pull{latest.pulls === 1 ? "" : "s"}</span></div></article>
+    <article className="panel history-hero"><div><p className="eyebrow"><span /> {difficulty} season history</p><h2>{history.length === 1 ? `Your first ${difficulty} baseline` : `${history.length} ${difficulty} raid nights, one clear timeline`}</h2><p>{linkedCharacters.length > 1 ? `Attendance combines ${linkedCharacters.join(" and ")}. ` : ""}Scores and attendance below use only raid nights that included {difficulty} pulls.</p></div><div className="history-latest"><small>Latest {difficulty} night</small><strong>{latest.present ? "Present" : "Absent"}</strong><span>{latest.pulls} pull{latest.pulls === 1 ? "" : "s"}</span></div></article>
     <div className="history-score-grid">{activeKeys.map((key) => <article className="panel history-metric" key={key}><div><span>{scoreLabels[key]}</span><strong>{latest.scores[key] ?? "—"}</strong></div><div className="history-bars" aria-label={`${scoreLabels[key]} by raid night`}>{history.map((point) => <span key={point.raidNightId}><i style={{ height: `${point.scores[key] ?? 4}%` }} /><b>{point.scores[key] ?? "—"}</b><small>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "numeric", day: "numeric" })}</small></span>)}</div></article>)}</div>
     <article className="panel history-table"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Night-by-night</p><h2>Progress without the guesswork</h2></div><span className="confidence">Player only</span></div><div className="table-scroll"><table><thead><tr><th>Raid night</th><th>Present</th><th>Pulls</th><th>Mechanics</th><th>Performance</th><th>Attendance</th><th>{player.role === "Healer" ? "Avg HPS" : "Avg DPS"}</th></tr></thead><tbody>{[...history].reverse().map((point) => <tr key={point.raidNightId}><td><strong>{new Date(point.happenedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</strong><small>{point.label}</small></td><td><span className={`review-chip ${point.present ? "clear" : "attention"}`}>{point.present ? "Yes" : "No"}</span></td><td>{point.pulls}</td><td>{point.scores.mechanics ?? "—"}</td><td>{point.scores.performance ?? "—"}</td><td>{point.scores.attendance ?? "—"}</td><td>{compact(player.role === "Healer" ? point.hps : point.dps)}</td></tr>)}</tbody></table></div></article>
   </section>;
@@ -49,12 +49,16 @@ export function PrivatePlayerDashboard({ initialWorkspace, token }: { initialWor
   const [status, setStatus] = useState("");
   const data = workspace.dashboard;
   const boss = data.bosses.find((candidate) => candidate.id === bossId) ?? data.bosses[0];
-  const pullOptions = data.pulls.filter((pull) => pull.bossId === boss?.id);
-  const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0] ?? data.pulls[0];
+  const bossPulls = data.pulls.filter((pull) => pull.bossId === boss?.id);
+  const selectedBossPull = bossPulls.find((candidate) => candidate.id === pullId) ?? bossPulls[0] ?? data.pulls[0];
+  const difficulty = selectedBossPull?.difficulty ?? "Unknown";
+  const difficultyOptions = [...new Set(bossPulls.map((candidate) => candidate.difficulty))];
+  const pullOptions = bossPulls.filter((candidate) => candidate.difficulty === difficulty);
+  const pull = pullOptions.find((candidate) => candidate.id === pullId) ?? pullOptions[0] ?? selectedBossPull;
   const pullPlayers = data.pullPlayers?.[pull?.id] ?? [];
   const player = pullPlayers[0] ?? data.players[0];
   const events = data.pullEvents?.[pull?.id] ?? [];
-  const activeRules = data.rules.filter((rule) => rule.enabled !== false && rule.bossId === boss?.id);
+  const activeRules = data.rules.filter((rule) => rule.enabled !== false && rule.bossId === boss?.id && pull && (!rule.difficulties.length || rule.difficulties.includes(pull.difficulty)));
   const rulesBySpell = useMemo(() => new Map(data.rules.map((rule) => [rule.spellId, rule])), [data.rules]);
   const matchedSpellIds = new Set(events.map((event) => event.spellId));
   const matchedRules = activeRules.filter((rule) => matchedSpellIds.has(rule.spellId));
@@ -76,9 +80,37 @@ export function PrivatePlayerDashboard({ initialWorkspace, token }: { initialWor
     } catch (error) { setStatus(error instanceof Error ? error.message : "That raid night could not be loaded."); }
     finally { setLoading(false); }
   }
-  function chooseBoss(nextBossId: string) {
+  async function chooseBoss(nextBossId: string) {
+    const nextPull = data.pulls.find((candidate) => candidate.bossId === nextBossId && candidate.difficulty === difficulty) ?? data.pulls.find((candidate) => candidate.bossId === nextBossId);
     setBossId(nextBossId);
-    setPullId(data.pulls.find((candidate) => candidate.bossId === nextBossId)?.id ?? "");
+    setPullId(nextPull?.id ?? "");
+    if (!nextPull || nextPull.difficulty === difficulty) return;
+    setLoading(true); setStatus(`Loading ${nextPull.difficulty} history…`);
+    try {
+      const response = await fetch(`/api/player/${encodeURIComponent(token)}?raidNightId=${encodeURIComponent(data.raidNightId ?? "")}&difficulty=${encodeURIComponent(nextPull.difficulty)}`, { cache: "no-store" });
+      const result = await response.json() as { workspace?: PrivatePlayerWorkspace; error?: string };
+      if (!response.ok || !result.workspace) throw new Error(result.error ?? `${nextPull.difficulty} history could not be loaded.`);
+      setWorkspace(result.workspace);
+      setBossId(nextBossId);
+      setPullId(result.workspace.dashboard.pulls.find((candidate) => candidate.id === nextPull.id)?.id ?? result.workspace.dashboard.pulls.find((candidate) => candidate.bossId === nextBossId && candidate.difficulty === nextPull.difficulty)?.id ?? nextPull.id);
+      setStatus("");
+    } catch (error) { setStatus(error instanceof Error ? error.message : `${nextPull.difficulty} history could not be loaded.`); }
+    finally { setLoading(false); }
+  }
+  async function chooseDifficulty(nextDifficulty: string) {
+    const nextPull = bossPulls.find((candidate) => candidate.difficulty === nextDifficulty);
+    if (!nextPull) return;
+    setPullId(nextPull.id); setLoading(true); setStatus(`Loading ${nextDifficulty} history…`);
+    try {
+      const response = await fetch(`/api/player/${encodeURIComponent(token)}?raidNightId=${encodeURIComponent(data.raidNightId ?? "")}&difficulty=${encodeURIComponent(nextDifficulty)}`, { cache: "no-store" });
+      const result = await response.json() as { workspace?: PrivatePlayerWorkspace; error?: string };
+      if (!response.ok || !result.workspace) throw new Error(result.error ?? `${nextDifficulty} history could not be loaded.`);
+      setWorkspace(result.workspace);
+      setBossId(boss.id);
+      setPullId(result.workspace.dashboard.pulls.find((candidate) => candidate.id === nextPull.id)?.id ?? result.workspace.dashboard.pulls.find((candidate) => candidate.bossId === boss.id && candidate.difficulty === nextDifficulty)?.id ?? nextPull.id);
+      setStatus("");
+    } catch (error) { setStatus(error instanceof Error ? error.message : `${nextDifficulty} history could not be loaded.`); }
+    finally { setLoading(false); }
   }
   if (!player || !boss || !pull) return <main className="private-shell"><section className="private-report"><article className="panel history-empty"><strong>No included pull is available yet</strong><p>This living link will populate automatically after the player appears in an included raid pull.</p></article></section></main>;
 
@@ -89,7 +121,7 @@ export function PrivatePlayerDashboard({ initialWorkspace, token }: { initialWor
       <div className="private-hero private-dashboard-hero"><div><h1>{workspace.playerName}&apos;s complete raid view</h1><p>{player.summary}</p></div><div className="player-seal"><strong>{workspace.playerName.slice(0, 2).toUpperCase()}</strong><span>{player.spec}<br />{player.className}</span></div></div>
       {data.dataSource && <div className="status-line data-source-line"><span /><a href={data.dataSource.reportUrl} rel="noreferrer" target="_blank">{data.dataSource.detail}</a><b>Only {workspace.playerName}&apos;s details are shown here</b></div>}
       {status && <div className="status-line" role="status"><span />{status}</div>}
-      <div className="filters private-filters" aria-label="Private player dashboard filters"><label>Raid night<select disabled={loading} value={data.raidNightId ?? ""} onChange={(event) => chooseRaidNight(event.target.value)}>{(data.raidNights ?? []).map((night) => <option value={night.id} key={night.id}>{night.name}</option>)}</select></label><label>Boss<select value={boss.id} onChange={(event) => chooseBoss(event.target.value)}>{data.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><label>Pull<select value={pull.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label><p><span className="live-dot" /> {activeRules.length} active rules · {pullOptions.length} pull{pullOptions.length === 1 ? "" : "s"}</p></div>
+      <div className="filters private-filters" aria-label="Private player dashboard filters"><label>Raid night<select disabled={loading} value={data.raidNightId ?? ""} onChange={(event) => chooseRaidNight(event.target.value)}>{(data.raidNights ?? []).map((night) => <option value={night.id} key={night.id}>{night.name}</option>)}</select></label><label>Boss<select disabled={loading} value={boss.id} onChange={(event) => chooseBoss(event.target.value)}>{data.bosses.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.name}</option>)}</select></label><label>Difficulty<select disabled={loading} value={difficulty} onChange={(event) => chooseDifficulty(event.target.value)}>{difficultyOptions.map((candidate) => <option value={candidate} key={candidate}>{candidate}</option>)}</select></label><label>Pull<select disabled={loading} value={pull.id} onChange={(event) => setPullId(event.target.value)}>{pullOptions.map((candidate) => <option value={candidate.id} key={candidate.id}>{candidate.label}</option>)}</select></label><p><span className="live-dot" /> {difficulty} · {activeRules.length} active rules · {pullOptions.length} pull{pullOptions.length === 1 ? "" : "s"}</p></div>
       <CoachingNotes notes={workspace.notes} raidNightId={data.raidNightId} bossId={boss.id} pullId={pull.id} audience="player" />
       <div className="player-tabs private-player-tabs" role="tablist" aria-label="Private player sections"><button aria-selected={tab === "review"} className={tab === "review" ? "active" : ""} onClick={() => setTab("review")} role="tab" type="button">Pull review</button><button aria-selected={tab === "history"} className={tab === "history" ? "active" : ""} onClick={() => setTab("history")} role="tab" type="button">Full history</button></div>
       {tab === "review" && <>
@@ -98,7 +130,7 @@ export function PrivatePlayerDashboard({ initialWorkspace, token }: { initialWor
         <section className="panel private-mechanics-panel"><div className="panel-heading"><div><p className="eyebrow muted"><span /> Mechanics & spell details</p><h2>Everything recorded for this pull</h2></div><span className="event-count">{events.length} player event{events.length === 1 ? "" : "s"}</span></div><div className="score-detail-columns"><div><h3>{workspace.playerName}&apos;s timeline</h3><ul className="events detail-event-list">{events.map((event) => <li key={event.id}><EventIcon event={event} rule={rulesBySpell.get(event.spellId)} /><div><a className="event-ability-link" href={wowheadUrl(event.spellId)} rel="noreferrer" target="_blank">{event.ability}</a><small>{event.detail} · Spell {event.spellId}</small></div><time>{event.timestamp}</time></li>)}{events.length === 0 && <li className="private-empty-event"><div><strong>No relevant timeline events</strong><small>No active rule recorded a player-specific event on this pull.</small></div></li>}</ul></div><div><h3>Encounter rules</h3><div className="detail-rule-list">{activeRules.map((rule) => <div className={matchedRules.some((match) => match.id === rule.id) ? "private-rule-matched" : ""} key={rule.id}><SpellIcon icon={rule.icon} name={rule.name} spellId={rule.spellId} /><p><strong>{rule.name}</strong><small><a href={wowheadUrl(rule.spellId)} rel="noreferrer" target="_blank">Spell {rule.spellId}</a> · {rule.category} · weight {rule.weight}</small></p><span className={`severity severity-${rule.severity.toLowerCase()}`}>{rule.severity}</span></div>)}{activeRules.length === 0 && <p className="detail-empty">No configured rules are active for this boss yet.</p>}</div></div></div></section>
         <section className="anonymous-context panel private-anonymous-context"><div><p className="eyebrow muted"><span /> Anonymous context</p><h2>Full detail without roster drama</h2><p>This page includes the complete selected player record, encounter rules, and anonymous raid averages. No teammate names or individual teammate reports are sent to this link.</p></div><div className="private-comparison-grid">{activeScoreKeys.map((key) => <span key={key}><small>{scoreLabels[key]}</small><strong>{player.scores[key] ?? "—"}</strong><em>Raid {raidAverages[key] ?? "—"}</em></span>)}</div></section>
       </>}
-      {tab === "history" && <HistoryView activeKeys={activeScoreKeys} history={workspace.history} linkedCharacters={workspace.linkedCharacters} player={player} />}
+      {tab === "history" && <HistoryView activeKeys={activeScoreKeys} difficulty={difficulty} history={workspace.history} linkedCharacters={workspace.linkedCharacters} player={player} />}
       <footer className="private-footer">Living player link · {workspace.linkedCharacters.length > 1 ? `linked identity: ${workspace.linkedCharacters.join(", ")}` : `${workspace.playerName} only`} · refreshes from included raid data</footer>
     </section>
   </main>;

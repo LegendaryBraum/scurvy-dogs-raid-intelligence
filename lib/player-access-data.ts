@@ -15,7 +15,7 @@ function averages(players: PlayerSnapshot[]) {
   })) as Record<ScoreKey, ScoreValue>;
 }
 
-export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNightId?: string | null): Promise<PrivatePlayerWorkspace | null> {
+export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNightId?: string | null, selectedDifficulty?: string | null): Promise<PrivatePlayerWorkspace | null> {
   const db = await ensureSchema();
   const access = await db.prepare(`
     SELECT p.id, p.name, COALESCE(pi.identity_id, p.id) AS identity_id
@@ -66,7 +66,7 @@ export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNigh
   }
   const firstPull = pulls[0];
   const firstPlayers = pullPlayers[firstPull.id] ?? [];
-  const historyData = await loadPlayerHistory(access.id, selectedNight.season_id);
+  const historyData = await loadPlayerHistory(access.id, selectedNight.season_id, selectedDifficulty ?? firstPull.difficulty);
   return {
     playerId: access.id,
     playerName: access.name,

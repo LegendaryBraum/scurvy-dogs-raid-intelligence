@@ -51,6 +51,7 @@ type KillRow = {
   dps: number | null;
   hps: number | null;
 };
+type DifficultyRow = { difficulty: number };
 
 const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Normal", 4: "Heroic", 5: "Mythic" };
 const rounded = (value: number | null): ScoreValue => value === null ? null : Math.round(value);
@@ -59,6 +60,9 @@ const role = (value: string): OfficerPlayerHistory["role"] => value === "Tank" |
 export async function GET(request: Request) {
   try {
     if (!await getOfficerSession(request)) return officerRequiredResponse();
+    const requestedDifficulty = new URL(request.url).searchParams.get("difficulty");
+    const parsedDifficulty = requestedDifficulty === null || requestedDifficulty === "all" ? null : Number(requestedDifficulty);
+    const difficultyId = parsedDifficulty !== null && difficultyNames[parsedDifficulty] ? parsedDifficulty : null;
     const db = await ensureSchema();
     const season = await db.prepare(`
       SELECT rn.season_id
@@ -69,16 +73,24 @@ export async function GET(request: Request) {
       ORDER BY rn.happened_at DESC, pu.start_time DESC
       LIMIT 1
     `).first<{ season_id: string }>();
-    if (!season) return Response.json({ players: [], totalRaidNights: 0 }, { headers: { "Cache-Control": "no-store" } });
+    if (!season) return Response.json({ players: [], totalRaidNights: 0, difficulties: [] }, { headers: { "Cache-Control": "no-store" } });
 
-    const [nightCount, playerResult, bossResult, killResult] = await Promise.all([
+    const [difficultyResult, nightCount, playerResult, bossResult, killResult] = await Promise.all([
+      db.prepare(`
+        SELECT DISTINCT pu.difficulty
+        FROM pulls pu
+        JOIN reports r ON r.id = pu.report_id AND r.source_mode = 'live' AND r.included = 1
+        JOIN raid_nights rn ON rn.id = r.raid_night_id AND rn.included = 1
+        WHERE rn.season_id = ? AND pu.included = 1 AND pu.difficulty IS NOT NULL
+        ORDER BY pu.difficulty
+      `).bind(season.season_id).all<DifficultyRow>(),
       db.prepare(`
         SELECT COUNT(DISTINCT rn.id) AS count
         FROM raid_nights rn
         JOIN reports r ON r.raid_night_id = rn.id AND r.source_mode = 'live' AND r.included = 1
         JOIN pulls pu ON pu.report_id = r.id AND pu.included = 1
-        WHERE rn.season_id = ? AND rn.included = 1
-      `).bind(season.season_id).first<{ count: number }>(),
+        WHERE rn.season_id = ? AND rn.included = 1 AND (? IS NULL OR pu.difficulty = ?)
+      `).bind(season.season_id, difficultyId, difficultyId).first<{ count: number }>(),
       db.prepare(`
         SELECT identity_player.id AS player_id, identity_player.name, identity_player.realm,
                identity_player.class_name, identity_player.role, MAX(pp.spec) AS spec,
@@ -97,10 +109,10 @@ export async function GET(request: Request) {
         JOIN pulls pu ON pu.id = pp.pull_id AND pu.included = 1
         JOIN reports r ON r.id = pu.report_id AND r.source_mode = 'live' AND r.included = 1
         JOIN raid_nights rn ON rn.id = r.raid_night_id AND rn.included = 1
-        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1
+        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1 AND (? IS NULL OR pu.difficulty = ?)
         GROUP BY identity_player.id, identity_player.name, identity_player.realm, identity_player.class_name, identity_player.role
         ORDER BY identity_player.name
-      `).bind(season.season_id).all<PlayerRow>(),
+      `).bind(season.season_id, difficultyId, difficultyId).all<PlayerRow>(),
       db.prepare(`
         SELECT identity_player.id AS player_id, b.id AS boss_id, b.name AS boss_name,
                COUNT(DISTINCT pu.id) AS pulls,
@@ -122,10 +134,10 @@ export async function GET(request: Request) {
         JOIN bosses b ON b.id = pu.boss_id
         JOIN reports r ON r.id = pu.report_id AND r.source_mode = 'live' AND r.included = 1
         JOIN raid_nights rn ON rn.id = r.raid_night_id AND rn.included = 1
-        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1
+        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1 AND (? IS NULL OR pu.difficulty = ?)
         GROUP BY identity_player.id, b.id, b.name
         ORDER BY identity_player.name, MAX(rn.happened_at) DESC, b.name
-      `).bind(season.season_id).all<BossRow>(),
+      `).bind(season.season_id, difficultyId, difficultyId).all<BossRow>(),
       db.prepare(`
         SELECT identity_player.id AS player_id, pu.id AS pull_id, pu.boss_id, rn.id AS raid_night_id,
                rn.name AS raid_night_name, rn.happened_at, pu.difficulty,
@@ -145,9 +157,9 @@ export async function GET(request: Request) {
         JOIN pulls pu ON pu.id = pp.pull_id AND pu.included = 1 AND pu.killed = 1
         JOIN reports r ON r.id = pu.report_id AND r.source_mode = 'live' AND r.included = 1
         JOIN raid_nights rn ON rn.id = r.raid_night_id AND rn.included = 1
-        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1
+        WHERE rn.season_id = ? AND COALESCE(prs.included, 1) = 1 AND (? IS NULL OR pu.difficulty = ?)
         ORDER BY rn.happened_at DESC, pu.start_time DESC
-      `).bind(season.season_id).all<KillRow>(),
+      `).bind(season.season_id, difficultyId, difficultyId).all<KillRow>(),
     ]);
 
     const totalRaidNights = Number(nightCount?.count ?? 0);
@@ -205,7 +217,12 @@ export async function GET(request: Request) {
       },
       bosses: bossesByPlayer.get(row.player_id) ?? [],
     }));
-    return Response.json({ players, totalRaidNights }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({
+      players,
+      totalRaidNights,
+      selectedDifficulty: difficultyId,
+      difficulties: difficultyResult.results.map((row) => ({ value: Number(row.difficulty), label: difficultyNames[Number(row.difficulty)] ?? "Unknown" })),
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Officer history could not be loaded." }, { status: 500 });
   }
