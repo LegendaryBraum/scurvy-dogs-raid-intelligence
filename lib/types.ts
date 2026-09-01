@@ -212,6 +212,7 @@ export type DashboardData = {
   reportCode: string;
   raid: string;
   bosses: { id: string; name: string }[];
+  configBosses?: { id: string; name: string }[];
   pulls: { id: string; bossId: string; label: string; killed: boolean; duration: string; difficulty: string }[];
   players: PlayerSnapshot[];
   roster?: RosterMember[];

@@ -91,6 +91,7 @@ type RuleRow = {
 type ModuleRow = { module_key: string; enabled: number };
 type RaidNightRow = { id: string; name: string; happened_at: string; report_count: number };
 type AttendanceRow = { identity_id: string; nights: number };
+type ConfigBossRow = { id: string; name: string; encounter_id: number };
 
 const defaultModuleSettings: ModuleSettings = { mechanics: true, performance: true, attendance: true, preparation: false };
 
@@ -131,7 +132,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
   const report = await reportStatement.first<ReportRow>();
   if (!report) return null;
 
-  const [pullResult, playerResult, eventResult, ruleResult, rosterResult, moduleResult, raidNightResult, attendanceResult] = await Promise.all([
+  const [pullResult, playerResult, eventResult, ruleResult, rosterResult, moduleResult, raidNightResult, attendanceResult, configBossResult] = await Promise.all([
     db.prepare(`
       SELECT pu.id, pu.boss_id, b.name AS boss_name, pu.fight_id, pu.pull_number, pu.difficulty,
              pu.killed, pu.start_time, pu.end_time, pu.boss_percentage
@@ -163,11 +164,11 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       ORDER BY e.timestamp
     `).bind(report.raid_night_id).all<EventRow>(),
     db.prepare(`
-      SELECT DISTINCT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.icon, mr.category, mr.severity,
+      SELECT mr.id, mr.boss_id, mr.spell_id, mr.name, mr.icon, mr.category, mr.severity,
              mr.weight, mr.event_type, mr.difficulties_json, mr.roles_json, mr.condition_json, mr.enabled
-      FROM mechanic_rules mr JOIN pulls pu ON pu.boss_id = mr.boss_id JOIN reports r ON r.id = pu.report_id
-      WHERE r.raid_night_id = ? AND r.included = 1 AND pu.included = 1 ORDER BY mr.enabled DESC, mr.updated_at DESC
-    `).bind(report.raid_night_id).all<RuleRow>(),
+      FROM mechanic_rules mr JOIN bosses b ON b.id = mr.boss_id
+      WHERE b.season_id = ? ORDER BY mr.enabled DESC, mr.updated_at DESC
+    `).bind(report.season_id).all<RuleRow>(),
     db.prepare(`
       SELECT p.id AS player_id, p.name, p.realm, p.class_name, p.role,
              MAX(pp.spec) AS spec,
@@ -208,6 +209,12 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
       WHERE rn.season_id = ? AND rn.included = 1 AND r.included = 1 AND pu.included = 1 AND r.source_mode = 'live' AND COALESCE(prs.included, 1) = 1
       GROUP BY COALESCE(pi.identity_id, p.id)
     `).bind(report.season_id).all<AttendanceRow>(),
+    db.prepare(`
+      SELECT b.id, b.name, b.encounter_id
+      FROM bosses b
+      WHERE b.season_id = ?
+      ORDER BY b.encounter_id, b.name
+    `).bind(report.season_id).all<ConfigBossRow>(),
   ]);
 
   const pullRows = pullResult.results;
@@ -359,6 +366,7 @@ export async function loadLatestDashboardData(selectedRaidNightId?: string | nul
     reportCode: report.code,
     raid: report.zone_name ?? report.title,
     bosses,
+    configBosses: configBossResult.results.map((boss) => ({ id: boss.id, name: boss.name })),
     pulls,
     players,
     roster,

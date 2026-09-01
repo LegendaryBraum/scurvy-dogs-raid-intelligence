@@ -112,7 +112,10 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved }: { di
       setPreview(result.preview);
       setCandidates(result.preview.candidates);
       onBossIdentified(result.preview.bossId);
-      setStatus(`${result.preview.candidates.length} mechanics are ready for your final review. Nothing affects player scores until you save the checked rules.`);
+      const newRuleCount = result.preview.candidates.filter((candidate) => candidate.selected && !candidate.alreadyConfigured).length;
+      setStatus(newRuleCount > 0
+        ? `${result.preview.candidates.length} mechanics are ready for your final review. Nothing affects player scores until you save the checked rules.`
+        : `${result.preview.bossName} is already saved. Its existing rules are shown read-only here and its boss card is available below—no duplicate save is needed.`);
     } catch (error) { setStatus(error instanceof Error ? error.message : "The Wipefest pull could not be read."); }
     finally { setBusy(false); }
   }
@@ -167,6 +170,7 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved }: { di
 
   const visibleCandidates = roleFilter === "All" ? candidates : candidates.filter((candidate) => candidate.roles.includes(roleFilter));
   const selectedCount = candidates.filter((candidate) => candidate.selected && !candidate.alreadyConfigured).length;
+  const alreadySaved = candidates.some((candidate) => candidate.alreadyConfigured) && selectedCount === 0;
   return <article className={`panel calibration-wizard ${preview ? "calibration-wizard-review" : ""}`}>
     <div className="calibration-heading"><div><p className="eyebrow"><span /> Step 1 · Wipefest boss upload</p><h2>Paste any Venomous Abyss boss pull.</h2><p>The app identifies the boss automatically, reads its mechanic definitions, Spell IDs, event types, and difficulty, then prepares the role and severity review before anything changes a score.</p></div><span className="confidence">Boss auto-detect</span></div>
     <div className="score-math"><div><strong>100</strong><small>Every player starts here</small></div><b>−</b><div><strong>points × matches</strong><small>Only checked penalty rules</small></div><b>=</b><div><strong>Mechanics score</strong><small>Never below 0</small></div><p><b>Severity is a label.</b> The point field is the actual math. Wipefest percentiles remain comparison context and never become penalty points.</p></div>
@@ -174,7 +178,7 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved }: { di
       <div className="calibration-source"><div><small>{preview.difficulty} · Pull {preview.fightId}</small><strong>{preview.bossName}</strong><span>{preview.reportTitle}</span></div><div>{calibrationBands.map((band) => <span className={`calibration-count calibration-count-${band.split(" ")[0].toLowerCase()}`} key={band}><strong>{candidates.filter((candidate) => candidate.band === band).length}</strong>{band}</span>)}</div><button className="review-again" disabled={busy} onClick={reset} type="button">Use another link</button></div>
       <div className="calibration-role-tabs" aria-label="Filter mechanics by role" role="tablist">{(["All", ...calibrationRoles] as const).map((role) => <button aria-selected={roleFilter === role} className={roleFilter === role ? "active" : ""} key={role} onClick={() => setRoleFilter(role)} role="tab" type="button">{role === "All" ? "All roles" : role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}<small>{role === "All" ? candidates.length : candidates.filter((candidate) => candidate.roles.includes(role)).length}</small></button>)}</div>
       <div className="calibration-bands">{calibrationBands.map((band) => { const items = visibleCandidates.filter((candidate) => candidate.band === band); if (!items.length) return null; return <section className={`calibration-band band-${band.split(" ")[0].toLowerCase()}`} key={band}><header><div><strong>{band}</strong><small>{band === "Major issue" ? "High-impact failures worth clear penalties" : band === "Minor issue" ? "Correctable mistakes with lighter penalties" : band === "Positive play" ? "Credit shown as evidence, never bonus points" : "Useful raid information that is not fair to blame on one player"}</small></div><span>{items.length}</span></header><div className="calibration-cards">{items.map((candidate) => <article className={`calibration-card ${candidate.selected ? "selected" : ""} ${candidate.alreadyConfigured ? "configured" : ""}`} key={candidate.id}><div className="calibration-card-main"><label className="calibration-select"><input checked={candidate.selected} disabled={candidate.alreadyConfigured || candidate.scoringMode === "context" || !candidate.spellId || !candidate.eventType} onChange={(event) => updateCandidate(candidate.id, { selected: event.target.checked })} type="checkbox" /><span>{candidate.alreadyConfigured ? "Already configured" : candidate.scoringMode === "context" ? "Context only" : candidate.selected ? "Include" : "Excluded"}</span></label>{candidate.spellId ? <SpellIcon icon={candidate.icon} name={candidate.name} spellId={candidate.spellId} /> : <span className="calibration-context-icon">i</span>}<div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>{candidate.spellId ? `Spell ${candidate.spellId} · ${candidate.eventType}` : "No fair player event"} · {candidate.confidence}</small></div><span className={`severity severity-${candidate.severity.toLowerCase()}`}>{candidate.severity}</span></div><div className="calibration-evidence"><span><small>Score effect</small><strong>{calibrationImpact(candidate)}</strong></span><span><small>Wipefest comparison</small><strong>{candidate.wipefestPercentile === null ? "Not scored" : `${candidate.wipefestPercentile}th percentile`}</strong></span><p>{candidate.confidenceReason}</p></div>{candidate.scoringMode !== "context" && !candidate.alreadyConfigured && <div className="calibration-controls"><label>Severity<select value={candidate.severity} onChange={(event) => updateCandidate(candidate.id, { severity: event.target.value as MechanicRule["severity"] })}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Points per match<input disabled={candidate.scoringMode !== "penalty"} min="0" onChange={(event) => updateCandidate(candidate.id, { weight: Math.max(0, Number(event.target.value) || 0) })} type="number" value={candidate.weight} /></label><label>Maximum matches<input disabled={candidate.scoringMode !== "penalty"} min="1" onChange={(event) => updateCandidate(candidate.id, { maxOccurrencesPerPull: Math.max(1, Number(event.target.value) || 1) })} type="number" value={candidate.maxOccurrencesPerPull ?? 1} /></label><fieldset><legend>Applies to</legend>{calibrationRoles.map((role) => <label key={role}><input checked={candidate.roles.includes(role)} onChange={() => changeRole(candidate, role)} type="checkbox" /> {role}</label>)}</fieldset></div>}</article>)}</div></section>; })}</div>
-      <div className="calibration-save"><div><strong>{selectedCount} rule{selectedCount === 1 ? "" : "s"} selected</strong><span>Review severity, points, caps, and roles before saving.</span></div><button className="primary-button" disabled={busy || disabled || selectedCount === 0} onClick={saveSelected} type="button">{busy ? "Saving reviewed rules…" : `Save ${selectedCount} reviewed rule${selectedCount === 1 ? "" : "s"}`}</button></div>
+      <div className="calibration-save"><div><strong>{alreadySaved ? `${preview.bossName} is already saved` : `${selectedCount} rule${selectedCount === 1 ? "" : "s"} selected`}</strong><span>{alreadySaved ? "Open its configured boss card below to review the stored rules." : "Review severity, points, caps, and roles before saving."}</span></div><button className="primary-button" disabled={busy || disabled || selectedCount === 0} onClick={saveSelected} type="button">{busy ? "Saving reviewed rules…" : alreadySaved ? "Already in boss library" : `Save ${selectedCount} reviewed rule${selectedCount === 1 ? "" : "s"}`}</button></div>
     </>}
     {status && <p className="config-status calibration-status" role="status">{status}</p>}
   </article>;
@@ -316,6 +320,7 @@ function OfficerAccessLanding({ checking }: { checking: boolean }) {
 }
 
 export function RaidApp({ initialData: fallbackData }: { initialData: DashboardData }) {
+  const fallbackConfigBosses = fallbackData.configBosses?.length ? fallbackData.configBosses : fallbackData.bosses;
   const [initialData, setInitialData] = useState(fallbackData);
   const [view, setView] = useState<View>("home");
   const [configureSection, setConfigureSection] = useState<ConfigureSection>("people");
@@ -323,7 +328,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [activeScore, setActiveScore] = useState<ScoreKey | null>(null);
   const [playerId, setPlayerId] = useState(initialData.players[0].id);
   const [bossId, setBossId] = useState(initialData.bosses[0].id);
-  const [ruleBossId, setRuleBossId] = useState(initialData.bosses[0].id);
+  const [ruleBossId, setRuleBossId] = useState(fallbackConfigBosses[0].id);
   const [pullId, setPullId] = useState(initialData.pulls[0].id);
   const [rules, setRules] = useState(initialData.rules);
   const [editingRule, setEditingRule] = useState<MechanicRule | null>(null);
@@ -363,7 +368,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
   function applyDashboard(nextData: DashboardData) {
     const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
-    const nextRuleBossId = nextData.bosses.some((candidate) => candidate.id === ruleBossId) ? ruleBossId : nextData.bosses[0].id;
+    const nextConfigBosses = nextData.configBosses?.length ? nextData.configBosses : nextData.bosses;
+    const nextRuleBossId = nextConfigBosses.some((candidate) => candidate.id === ruleBossId) ? ruleBossId : nextConfigBosses[0].id;
     const nextPullId = nextData.pulls.some((candidate) => candidate.id === pullId) ? pullId : nextData.pulls.find((candidate) => candidate.bossId === nextBossId)?.id ?? nextData.pulls[0].id;
     const nextRoster = nextData.roster ?? [];
     setInitialData(nextData);
@@ -516,7 +522,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }, [accessState, importOpen]);
 
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
-  const ruleBoss = initialData.bosses.find((candidate) => candidate.id === ruleBossId) ?? initialData.bosses[0];
+  const configBosses = initialData.configBosses?.length ? initialData.configBosses : initialData.bosses;
+  const ruleBoss = configBosses.find((candidate) => candidate.id === ruleBossId) ?? configBosses[0] ?? initialData.bosses[0];
   const bossPulls = initialData.pulls.filter((candidate) => candidate.bossId === bossId);
   const selectedBossPull = bossPulls.find((candidate) => candidate.id === pullId) ?? bossPulls[0];
   const playerDifficulty = selectedBossPull?.difficulty ?? "Unknown";
@@ -527,11 +534,17 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const moduleSettings = initialData.moduleSettings ?? defaultModuleSettings;
   const activeScoreKeys = scoreKeys.filter((key) => moduleSettings[key]);
   const activeRules = rules.filter((rule) => rule.enabled !== false);
+  const configBossOrder = new Map(configBosses.map((candidate, index) => [candidate.id, index]));
+  const configurationBosses = [...configBosses].sort((left, right) => {
+    const leftConfigured = activeRules.some((rule) => rule.bossId === left.id);
+    const rightConfigured = activeRules.some((rule) => rule.bossId === right.id);
+    return Number(rightConfigured) - Number(leftConfigured) || (configBossOrder.get(left.id) ?? 0) - (configBossOrder.get(right.id) ?? 0);
+  });
   const ruleBossRules = rules.filter((rule) => rule.bossId === ruleBossId);
   const activeRuleBossRules = ruleBossRules.filter((rule) => rule.enabled !== false);
   const ruleBossPulls = initialData.pulls.filter((candidate) => candidate.bossId === ruleBossId);
   const ruleBossDifficulties = [...new Set(ruleBossPulls.map((candidate) => candidate.difficulty))];
-  const configuredBossCount = initialData.bosses.filter((candidate) => activeRules.some((rule) => rule.bossId === candidate.id)).length;
+  const configuredBossCount = configBosses.filter((candidate) => activeRules.some((rule) => rule.bossId === candidate.id)).length;
   const rosterMembers = initialData.roster ?? initialData.players.map((candidate) => ({ id: candidate.id, name: candidate.name, realm: candidate.realm, className: candidate.className, spec: candidate.spec, role: candidate.role, pullsSeen: initialData.pulls.length, raidNights: 1, lastSeen: null, included: true }));
   const rosterPlayer = rosterMembers.find((candidate) => candidate.id === playerId) ?? rosterMembers.find((candidate) => candidate.included) ?? rosterMembers[0];
   const presentPlayer = activePlayers.find((candidate) => candidate.id === playerId);
@@ -1032,10 +1045,10 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         </div>}
         {configureSection === "scoring" && <div aria-labelledby="configure-scoring-tab" className="configure-section" id="configure-scoring" role="tabpanel">
           <ModuleManager settings={moduleSettings} busy={busy} status={moduleStatus} onToggle={toggleModule} />
-          <WipefestCalibrationWizard disabled={busy} onBossIdentified={(identifiedBossId) => { if (initialData.bosses.some((candidate) => candidate.id === identifiedBossId)) { setRuleBossId(identifiedBossId); setEditingRule(null); } }} onSaved={(savedRules) => { const savedBossId = savedRules[0]?.bossId; const savedBoss = initialData.bosses.find((candidate) => candidate.id === savedBossId); if (savedBossId) setRuleBossId(savedBossId); setRules((current) => [...savedRules, ...current]); setRuleStatus(`${savedRules.length} Wipefest-reviewed rule${savedRules.length === 1 ? "" : "s"} saved for ${savedBoss?.name ?? "the detected boss"}. Review or recalculate that boss below.`); }} />
+          <WipefestCalibrationWizard disabled={busy} onBossIdentified={(identifiedBossId) => { if (configBosses.some((candidate) => candidate.id === identifiedBossId)) { setRuleBossId(identifiedBossId); setEditingRule(null); } }} onSaved={(savedRules) => { const savedBossId = savedRules[0]?.bossId; const savedBoss = configBosses.find((candidate) => candidate.id === savedBossId); if (savedBossId) setRuleBossId(savedBossId); setRules((current) => [...savedRules, ...current]); setRuleStatus(`${savedRules.length} Wipefest-reviewed rule${savedRules.length === 1 ? "" : "s"} saved for ${savedBoss?.name ?? "the detected boss"}. Review or recalculate that boss below.`); }} />
           <section className="panel boss-rule-board">
-            <div className="boss-rule-board-heading"><div><p className="eyebrow muted"><span /> Step 2 · {initialData.raid} boss library</p><h2>Choose the boss you want to inspect</h2><p>Uploaded Wipefest rules appear on the matching boss automatically. Select any encounter to review its rule library, adjust rules manually, or recalculate its saved pulls.</p></div><div className="boss-rule-progress"><strong>{configuredBossCount}/{initialData.bosses.length}</strong><small>Bosses with active rules</small></div></div>
-            <div className="boss-rule-grid" aria-label={`${initialData.raid} bosses`}>{initialData.bosses.map((candidate, index) => { const candidateRules = rules.filter((rule) => rule.bossId === candidate.id); const activeCount = candidateRules.filter((rule) => rule.enabled !== false).length; const pullCount = initialData.pulls.filter((pullCandidate) => pullCandidate.bossId === candidate.id).length; return <button aria-pressed={ruleBossId === candidate.id} className={ruleBossId === candidate.id ? "active" : ""} key={candidate.id} onClick={() => { setRuleBossId(candidate.id); setEditingRule(null); setRuleStatus(""); }} type="button"><span className="boss-rule-number">{String(index + 1).padStart(2, "0")}</span><span className="boss-rule-copy"><strong>{candidate.name}</strong><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Needs calibration"} · {pullCount} pull{pullCount === 1 ? "" : "s"}</small></span><span className={`boss-rule-state ${activeCount ? "ready" : "empty"}`}>{activeCount ? "Configured" : "Not started"}</span></button>; })}</div>
+            <div className="boss-rule-board-heading"><div><p className="eyebrow muted"><span /> Step 2 · {initialData.raid} boss library</p><h2>Choose the boss you want to inspect</h2><p>Uploaded Wipefest rules appear on the matching boss automatically. Configured bosses stay together at the top so they are easy to revisit, followed by encounters that still need calibration.</p></div><div className="boss-rule-progress"><strong>{configuredBossCount}/{configBosses.length}</strong><small>Bosses with active rules</small></div></div>
+            <div className="boss-rule-grid" aria-label={`${initialData.raid} bosses`}>{configurationBosses.map((candidate, index) => { const candidateRules = rules.filter((rule) => rule.bossId === candidate.id); const activeCount = candidateRules.filter((rule) => rule.enabled !== false).length; const pullCount = initialData.pulls.filter((pullCandidate) => pullCandidate.bossId === candidate.id).length; return <button aria-pressed={ruleBossId === candidate.id} className={ruleBossId === candidate.id ? "active" : ""} key={candidate.id} onClick={() => { setRuleBossId(candidate.id); setEditingRule(null); setRuleStatus(""); }} type="button"><span className="boss-rule-number">{String(index + 1).padStart(2, "0")}</span><span className="boss-rule-copy"><strong>{candidate.name}</strong><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Needs calibration"} · {pullCount} pull{pullCount === 1 ? "" : "s"}</small></span><span className={`boss-rule-state ${activeCount ? "ready" : "empty"}`}>{activeCount ? "Configured" : "Not started"}</span></button>; })}</div>
           </section>
           <div className="boss-rule-toolbar"><div><small>Selected boss</small><strong>{ruleBoss.name}</strong><span>{initialData.raid}</span></div><div className="boss-rule-stats"><span><small>Active rules</small><strong>{activeRuleBossRules.length}</strong></span><span><small>Paused rules</small><strong>{ruleBossRules.length - activeRuleBossRules.length}</strong></span><span><small>Saved pulls</small><strong>{ruleBossPulls.length}</strong></span><span><small>Difficulties</small><strong>{ruleBossDifficulties.length || 0}</strong></span></div><button className="share-button" disabled={busy || activeRuleBossRules.length === 0} onClick={reanalyzeBoss} type="button">Recalculate {ruleBoss.name}</button></div>
           {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}

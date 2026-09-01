@@ -78,6 +78,7 @@ export async function loadPrivatePlayerWorkspace(token: string, selectedRaidNigh
       ...full,
       raidNights: nights.map((night) => ({ id: night.id, name: night.name, happenedAt: night.happened_at })),
       bosses: full.bosses.filter((boss) => bossIds.has(boss.id)),
+      configBosses: full.configBosses?.filter((boss) => bossIds.has(boss.id)),
       pulls,
       players: firstPlayers,
       roster: (full.roster ?? []).filter((player) => allowedPlayerIds.has(player.id)),
