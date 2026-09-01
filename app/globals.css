@@ -514,6 +514,39 @@ tbody tr:last-child td { border-bottom: 0; }
 .config-filters > div span { color: #708287; font-size: 9px; font-weight: 800; text-transform: uppercase; }
 .config-filters > div strong { font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
 .config-filters > button { min-height: 38px; }
+.boss-rule-board { margin-bottom: 14px; border-color: #c8d9d6; background: linear-gradient(150deg, #ffffff 0%, #f4f8f7 100%); }
+.boss-rule-board-heading { display: flex; align-items: start; justify-content: space-between; gap: 24px; }
+.boss-rule-board-heading h2 { margin: 8px 0 6px; color: #233f47; font-family: Georgia, serif; font-size: 27px; font-weight: 500; }
+.boss-rule-board-heading p:not(.eyebrow) { max-width: 760px; margin: 0; color: #718287; font-size: 9px; line-height: 1.55; }
+.boss-rule-progress { min-width: 135px; padding: 11px 13px; border: 1px solid #d4e1de; border-radius: 10px; text-align: right; background: #fff; }
+.boss-rule-progress strong, .boss-rule-progress small { display: block; }
+.boss-rule-progress strong { color: #246353; font-family: Georgia, serif; font-size: 25px; font-weight: 500; }
+.boss-rule-progress small { margin-top: 2px; color: #839195; font-size: 7px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.boss-rule-grid { margin-top: 17px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.boss-rule-grid > button { min-width: 0; min-height: 86px; padding: 11px; display: grid; grid-template-columns: 28px 1fr; grid-template-rows: 1fr auto; align-items: start; gap: 4px 8px; border: 1px solid #d7e2e0; border-radius: 10px; color: #3d5960; background: rgba(255,255,255,.92); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease, background .16s ease; }
+.boss-rule-grid > button:hover { border-color: #94bbb0; transform: translateY(-1px); box-shadow: 0 7px 18px rgba(38, 74, 68, .08); }
+.boss-rule-grid > button.active { border-color: var(--teal); background: #e8f3ef; box-shadow: inset 0 0 0 1px var(--teal); }
+.boss-rule-number { width: 28px; height: 28px; display: grid; place-items: center; grid-row: 1 / 3; border-radius: 8px; color: #71858a; background: #edf2f1; font: 800 8px/1 monospace; }
+.boss-rule-grid > button.active .boss-rule-number { color: #fff; background: var(--teal); }
+.boss-rule-copy { min-width: 0; }
+.boss-rule-copy strong, .boss-rule-copy small { display: block; }
+.boss-rule-copy strong { overflow: hidden; color: #2d4b53; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.boss-rule-copy small { margin-top: 4px; color: #849397; font-size: 7px; line-height: 1.35; }
+.boss-rule-state { justify-self: start; padding: 4px 6px; border-radius: 999px; font-size: 6px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.boss-rule-state.ready { color: #276f5b; background: #dff0e9; }
+.boss-rule-state.empty { color: #866a46; background: #f3eadb; }
+.boss-rule-toolbar { margin-bottom: 14px; padding: 12px 13px; display: grid; grid-template-columns: minmax(190px, .75fr) 1fr auto; align-items: center; gap: 15px; border: 1px solid #cadbd7; border-radius: 12px; background: #173d46; }
+.boss-rule-toolbar > div:first-child small, .boss-rule-toolbar > div:first-child strong, .boss-rule-toolbar > div:first-child span { display: block; }
+.boss-rule-toolbar > div:first-child small { color: #83b6a8; font-size: 7px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.boss-rule-toolbar > div:first-child strong { margin-top: 4px; color: #fff; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
+.boss-rule-toolbar > div:first-child span { margin-top: 2px; color: #aac0c3; font-size: 7px; }
+.boss-rule-stats { display: grid; grid-template-columns: repeat(4, minmax(62px, 1fr)); gap: 6px; }
+.boss-rule-stats > span { min-height: 43px; padding: 7px 8px; display: grid; align-content: center; border-radius: 8px; background: rgba(255,255,255,.08); }
+.boss-rule-stats small, .boss-rule-stats strong { display: block; }
+.boss-rule-stats small { color: #9cb4b7; font-size: 6px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.boss-rule-stats strong { margin-top: 3px; color: #fff; font-family: Georgia, serif; font-size: 16px; font-weight: 500; }
+.boss-rule-toolbar .share-button { min-height: 38px; color: #173d46; border-color: #d7ebe5; background: #d7ebe5; white-space: nowrap; }
+.boss-rule-toolbar .share-button:disabled { color: #789096; border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
 .config-status { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #496970; background: #eaf3f1; font-size: 9px; line-height: 1.5; }
 .config-grid { display: grid; grid-template-columns: 1.25fr .75fr; align-items: start; gap: 14px; }
 .rule-list { margin-top: 16px; }
@@ -783,6 +816,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .boss-kill-summary { grid-template-columns: minmax(175px, 1.4fr) repeat(3, minmax(58px, .5fr)) auto; }
   .boss-kill-summary > span:nth-of-type(4) { display: none; }
   .roster-manager-heading, .module-manager-heading, .run-manager-heading { align-items: start; }
+  .boss-rule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .boss-rule-toolbar { grid-template-columns: 1fr; }
   .calibration-source { grid-template-columns: 1fr; }
   .calibration-source > div:nth-child(2) { grid-template-columns: repeat(4, 1fr); }
   .calibration-evidence, .calibration-controls { margin-left: 0; }
@@ -839,6 +874,11 @@ tbody tr:last-child td { border-bottom: 0; }
   .officer-session > button { grid-column: 1 / -1; justify-self: start; }
   .officer-invite-actions { grid-column: 1 / -1; }
   .officer-summary, .config-filters { grid-template-columns: 1fr; }
+  .boss-rule-board-heading { display: grid; }
+  .boss-rule-progress { min-width: 0; text-align: left; }
+  .boss-rule-grid, .boss-rule-stats { grid-template-columns: 1fr 1fr; }
+  .boss-rule-toolbar { align-items: stretch; }
+  .boss-rule-toolbar .share-button { white-space: normal; }
   .score-math, .calibration-form, .calibration-save { grid-template-columns: 1fr; }
   .score-math > b { transform: rotate(90deg); }
   .calibration-source > div:nth-child(2), .calibration-role-tabs { grid-template-columns: 1fr 1fr; }
