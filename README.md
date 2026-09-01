@@ -7,7 +7,7 @@ An internal raid-analysis MVP built around a simple promise: a player should und
 - Accepts one or multiple full-run Warcraft Logs report URLs and previews the raid contents before saving.
 - Stores the hierarchy `Season → Raid Night → Report → Boss → Pull → Player` in D1.
 - Keeps encounter rules separate from the generic analysis engine.
-- Reads a specific Wipefest pull into a human-reviewed calibration wizard with exact Spell IDs, event types, difficulty, role filters, severity bands, and transparent point caps.
+- Reads any specific Wipefest boss pull, identifies its imported encounter automatically, and opens a human-reviewed calibration wizard with exact Spell IDs, event types, difficulty, role filters, severity bands, and transparent point caps.
 - Shows every imported raid boss on one configuration board with separate calibration status, rule counts, saved pulls, and a dedicated rule workspace.
 - Lets officers edit, duplicate, pause, and restore encounter rules without deleting their history.
 - Scores Mechanics, DPS/HPS Performance, Attendance, and Preparation independently.

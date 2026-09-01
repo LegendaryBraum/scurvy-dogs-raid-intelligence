@@ -26,6 +26,7 @@ export type CalibrationCandidate = {
 };
 
 export type CalibrationPreview = {
+  bossId: string;
   reportCode: string;
   fightId: number;
   reportTitle: string;
@@ -213,7 +214,7 @@ export function parseWipefestUrl(input: string) {
   return { reportCode: match[1], fightId: Number(match[2]), sourceUrl: url.toString() };
 }
 
-export function buildCalibrationPreview({ payload, sourceUrl, existingRules }: { payload: unknown; sourceUrl: string; existingRules: Array<{ spell_id: number; event_type: string }> }): CalibrationPreview {
+export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRules }: { payload: unknown; sourceUrl: string; bossId: string; existingRules: Array<{ spell_id: number; event_type: string }> }): CalibrationPreview {
   const response = record(payload);
   const info = record(response.info);
   const report = record(response.report);
@@ -355,6 +356,7 @@ export function buildCalibrationPreview({ payload, sourceUrl, existingRules }: {
   cleaned.forEach((candidate) => { counts[candidate.band] += 1; });
   const parsedUrl = parseWipefestUrl(sourceUrl);
   return {
+    bossId,
     reportCode: String(report.id ?? parsedUrl.reportCode),
     fightId: Number(info.id ?? parsedUrl.fightId),
     reportTitle: String(report.title ?? "Wipefest report"),
