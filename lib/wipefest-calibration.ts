@@ -58,6 +58,23 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(number) ? number : null;
 }
 
+function parseDifficulties(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value ?? "[]") as unknown;
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function configuredForDifficulty(existingRules: Array<{ spell_id: number; event_type: string; difficulties_json?: string | null }>, spellId: number, eventType: string, difficulty: string) {
+  return existingRules.some((rule) => {
+    if (rule.spell_id !== spellId || rule.event_type !== eventType) return false;
+    const difficulties = parseDifficulties(rule.difficulties_json);
+    return difficulties.length === 0 || difficulties.includes(difficulty);
+  });
+}
+
 function decodeEntities(value: string) {
   return value
     .replace(/&apos;|&#39;/g, "'")
@@ -214,7 +231,7 @@ export function parseWipefestUrl(input: string) {
   return { reportCode: match[1], fightId: Number(match[2]), sourceUrl: url.toString() };
 }
 
-export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRules }: { payload: unknown; sourceUrl: string; bossId: string; existingRules: Array<{ spell_id: number; event_type: string }> }): CalibrationPreview {
+export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRules }: { payload: unknown; sourceUrl: string; bossId: string; existingRules: Array<{ spell_id: number; event_type: string; difficulties_json?: string | null }> }): CalibrationPreview {
   const response = record(payload);
   const info = record(response.info);
   const report = record(response.report);
@@ -289,7 +306,7 @@ export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRu
         const mode = modeFor(config, eventType, description);
         const severity = severityFor(description, insight.major === true, mode);
         const defaults = defaultsFor(severity, mode);
-        const alreadyConfigured = existingRules.some((rule) => rule.spell_id === spellId && rule.event_type === eventType);
+        const alreadyConfigured = configuredForDifficulty(existingRules, spellId, eventType, difficulty);
         const highConfidence = ids.length === 1 && strings(eventConfig.tags).map((tag) => tag.toLowerCase()).includes("player");
         candidates.push({
           id: `${String(config.group)}-${String(config.id)}-${String(eventConfig.id)}-${spellId}`,
@@ -323,7 +340,7 @@ export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRu
     const deathAbilities = abilitiesFromValue(deathInsight.values);
     for (const abilityId of titleAbilityIds(deathInsight.title)) if (!deathAbilities.has(abilityId) && reportAbilities.has(abilityId)) deathAbilities.set(abilityId, reportAbilities.get(abilityId)!);
     for (const [spellId, ability] of deathAbilities) {
-      const alreadyConfigured = existingRules.some((rule) => rule.spell_id === spellId && rule.event_type === "death");
+      const alreadyConfigured = configuredForDifficulty(existingRules, spellId, "death", difficulty);
       candidates.push({
         id: `raid-death-${spellId}`,
         insightName: "Deaths",

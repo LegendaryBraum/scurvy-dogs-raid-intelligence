@@ -5,7 +5,7 @@ import { buildCalibrationPreview, parseWipefestUrl } from "../../../lib/wipefest
 export const runtime = "edge";
 
 type BossRow = { id: string; name: string; encounter_id: number };
-type ExistingRuleRow = { spell_id: number; event_type: string };
+type ExistingRuleRow = { spell_id: number; event_type: string; difficulties_json: string };
 
 export async function POST(request: Request) {
   try {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       LIMIT 1
     `).bind(encounterId).first<BossRow>();
     if (!boss) return Response.json({ error: `${String(info?.name ?? "That boss")} is not in the raid data yet. Import a Warcraft Logs pull for it first, then use this Wipefest link again.` }, { status: 409 });
-    const existing = await db.prepare("SELECT spell_id, event_type FROM mechanic_rules WHERE boss_id = ?").bind(boss.id).all<ExistingRuleRow>();
+    const existing = await db.prepare("SELECT spell_id, event_type, difficulties_json FROM mechanic_rules WHERE boss_id = ?").bind(boss.id).all<ExistingRuleRow>();
     const preview = buildCalibrationPreview({ payload, sourceUrl: parsed.sourceUrl, bossId: boss.id, existingRules: existing.results });
     if (!preview.candidates.length) return Response.json({ error: "Wipefest returned the fight, but no reviewable encounter mechanics were found." }, { status: 422 });
     return Response.json({ preview });

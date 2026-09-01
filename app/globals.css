@@ -547,6 +547,14 @@ tbody tr:last-child td { border-bottom: 0; }
 .boss-rule-stats strong { margin-top: 3px; color: #fff; font-family: Georgia, serif; font-size: 16px; font-weight: 500; }
 .boss-rule-toolbar .share-button { min-height: 38px; color: #173d46; border-color: #d7ebe5; background: #d7ebe5; white-space: nowrap; }
 .boss-rule-toolbar .share-button:disabled { color: #789096; border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
+.rule-difficulty-tabs { margin: -2px 0 14px; padding: 5px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; border: 1px solid #cadbd7; border-radius: 12px; background: #e8efed; }
+.rule-difficulty-tabs button { min-height: 52px; padding: 8px 12px; display: grid; align-content: center; gap: 3px; border: 1px solid transparent; border-radius: 8px; color: #62787e; background: transparent; cursor: pointer; text-align: left; transition: color .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease; }
+.rule-difficulty-tabs button:hover { color: #264a50; background: rgba(255,255,255,.65); }
+.rule-difficulty-tabs button.active { color: #fff; border-color: #1e6655; background: var(--teal); box-shadow: 0 5px 14px rgba(39,132,108,.18); }
+.rule-difficulty-tabs span, .rule-difficulty-tabs small { display: block; }
+.rule-difficulty-tabs span { font-family: Georgia, serif; font-size: 14px; font-weight: 600; }
+.rule-difficulty-tabs small { color: #859598; font-size: 7px; font-weight: 800; }
+.rule-difficulty-tabs button.active small { color: #d8eee8; }
 .config-status { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; color: #496970; background: #eaf3f1; font-size: 9px; line-height: 1.5; }
 .config-grid { display: grid; grid-template-columns: 1.25fr .75fr; align-items: start; gap: 14px; }
 .rule-list { margin-top: 16px; }
