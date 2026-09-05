@@ -151,6 +151,10 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(runs, /"pull"/);
   assert.match(runs, /DELETE FROM shares WHERE pull_id = \?/);
   assert.match(identities, /identity_id/);
+  assert.match(app, /Linked with \{linkedNames\}/);
+  assert.match(app, /Unlink this character/);
+  assert.match(identities, /WHERE identity_id = \? AND player_id != \?/);
+  assert.match(identities, /player\.identity_id !== target\.identity_id/);
   const playerHistory = await readFile(new URL("../lib/player-history.ts", import.meta.url), "utf8");
   assert.match(history, /loadPlayerHistory/);
   assert.match(history, /difficulty/);

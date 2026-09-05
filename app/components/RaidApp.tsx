@@ -203,7 +203,17 @@ function RaidNightManager({ raidNights, busy, status, onToggle, onDelete, onRepl
 
 function IdentityManager({ members, busy, status, onLink }: { members: RosterMember[]; busy: boolean; status: string; onLink: (playerId: string, identityId: string) => void }) {
   const activeMembers = members.filter((member) => member.included);
-  return <article className="panel identity-manager"><div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raider identities</p><h2>Link mains and alternate characters</h2><p>Attendance follows the person. Choose another active character only when both names belong to the same raider.</p></div><div className="module-count"><strong>{new Set(activeMembers.map((member) => member.identityId ?? member.id)).size}</strong><small>Raiders</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="identity-list">{activeMembers.map((member) => { const identity = members.find((candidate) => candidate.id === (member.identityId ?? member.id)); return <label key={member.id}><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><span><strong>{member.name}</strong><small>{member.spec} {member.className}{identity && identity.id !== member.id ? ` · linked with ${identity.name}` : " · own attendance"}</small></span><select disabled={busy} value={member.identityId ?? member.id} onChange={(event) => onLink(member.id, event.target.value)}><option value={member.id}>Keep separate</option>{activeMembers.filter((candidate) => candidate.id !== member.id).map((candidate) => <option value={candidate.identityId ?? candidate.id} key={candidate.id}>Same raider as {candidate.name}</option>)}</select></label>; })}</div></article>;
+  return <article className="panel identity-manager"><div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raider identities</p><h2>Link mains and alternate characters</h2><p>Attendance follows the person. Choose another active character only when both names belong to the same raider.</p></div><div className="module-count"><strong>{new Set(activeMembers.map((member) => member.identityId ?? member.id)).size}</strong><small>Raiders</small></div></div>{status && <p className="roster-status" role="status">{status}</p>}<div className="identity-list">{activeMembers.map((member) => {
+    const identityId = member.identityId ?? member.id;
+    const linkedMembers = activeMembers.filter((candidate) => candidate.id !== member.id && (candidate.identityId ?? candidate.id) === identityId);
+    const linkedNames = linkedMembers.map((candidate) => candidate.name).join(", ");
+    const currentValue = linkedMembers.length ? `linked:${identityId}` : `self:${member.id}`;
+    return <label key={member.id}><span className="roster-avatar">{member.name.slice(0, 2).toUpperCase()}</span><span><strong>{member.name}</strong><small>{member.spec} {member.className}{linkedMembers.length ? ` · linked with ${linkedNames}` : " · own attendance"}</small></span><select disabled={busy} value={currentValue} onChange={(event) => {
+      const [action, selectedId] = event.target.value.split(":", 2);
+      if (action === "self") onLink(member.id, member.id);
+      if (action === "player" && selectedId) onLink(member.id, selectedId);
+    }}><option value={`self:${member.id}`}>{linkedMembers.length ? "Unlink this character" : "Keep separate"}</option>{linkedMembers.length > 0 && <option value={`linked:${identityId}`}>Linked with {linkedNames}</option>}{activeMembers.filter((candidate) => candidate.id !== member.id && (candidate.identityId ?? candidate.id) !== identityId).map((candidate) => <option value={`player:${candidate.id}`} key={candidate.id}>Same raider as {candidate.name}</option>)}</select></label>;
+  })}</div></article>;
 }
 
 function AccessManager({ members }: { members: RosterMember[] }) {
@@ -655,7 +665,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
 
   async function linkIdentity(characterId: string, identityId: string) {
     const character = rosterMembers.find((member) => member.id === characterId);
-    setBusy(true); setIdentityStatus(`Updating ${character?.name ?? "character"}…`);
+    const separating = characterId === identityId;
+    setBusy(true); setIdentityStatus(`${separating ? "Separating" : "Updating"} ${character?.name ?? "character"}…`);
     try {
       const response = await fetch("/api/identities", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ playerId: characterId, identityId }) });
       const result = await response.json() as { error?: string };
@@ -664,7 +675,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       const dashboardResult = await dashboardResponse.json() as { data?: DashboardData; error?: string };
       if (!dashboardResponse.ok || !dashboardResult.data) throw new Error(dashboardResult.error ?? "The updated roster could not be loaded.");
       applyDashboard(dashboardResult.data); setHistoryRevision((current) => current + 1);
-      setIdentityStatus("Character link saved. Attendance and History now treat those characters as one raider.");
+      setIdentityStatus(separating ? "Character separated. Every affected row now shows the updated raider group." : "Character link saved. Every member of the raider group now shows the same relationship.");
     } catch (error) { setIdentityStatus(error instanceof Error ? error.message : "The character link could not be saved."); }
     finally { setBusy(false); }
   }
