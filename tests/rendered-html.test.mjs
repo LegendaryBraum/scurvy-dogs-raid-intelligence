@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { parseWipefestUrl, resolveWipefestFightId } from "../lib/wipefest-calibration.ts";
 
 async function render(pathname = "/", init = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -10,6 +11,19 @@ async function render(pathname = "/", init = {}) {
     ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
   }, { waitUntil() {}, passThroughOnException() {} });
 }
+
+test("accepts Wipefest latest-pull links and resolves them to a numeric fight", async () => {
+  const parsed = parseWipefestUrl("https://www.wipefest.gg/report/4GrX8KgZHNmfknay/fight/last?gameVersion=warcraft-live");
+  assert.deepEqual({ reportCode: parsed.reportCode, fightId: parsed.fightId }, { reportCode: "4GrX8KgZHNmfknay", fightId: "last" });
+  const requested = [];
+  const fightId = await resolveWipefestFightId(parsed.reportCode, parsed.fightId, async (url) => {
+    requested.push(String(url));
+    return Response.json({ fights: [{ id: 12, difficulty: 4 }, { id: 28, difficulty: 4 }, { id: 31 }] });
+  });
+  assert.equal(fightId, 28);
+  assert.deepEqual(requested, ["https://api.wipefest.gg/report/4GrX8KgZHNmfknay?gameVersion=warcraft-live"]);
+  assert.equal((await resolveWipefestFightId(parsed.reportCode, 17, async () => { throw new Error("should not fetch"); })), 17);
+});
 
 test("server-renders the link-locked public shell without private raid data", async () => {
   const response = await render();

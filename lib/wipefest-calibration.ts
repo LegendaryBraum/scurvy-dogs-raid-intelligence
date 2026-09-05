@@ -45,6 +45,8 @@ const difficultyNames: Record<number, string> = { 1: "LFR", 2: "Flex", 3: "Norma
 const supportedEventTypes = new Set<MechanicRule["eventType"]>(["damage", "debuff", "cast", "interrupt", "dispel", "death"]);
 const skippedInsightNames = /ready check|flask|food|potion|healthstone|item level|enchants?|gems?|tier pieces/i;
 
+type WipefestReportFight = { id?: number; difficulty?: number };
+
 function record(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
@@ -226,9 +228,28 @@ export function parseWipefestUrl(input: string) {
   let url: URL;
   try { url = new URL(input.trim()); } catch { throw new Error("Paste a full Wipefest fight link."); }
   if (!/^(?:www\.)?wipefest\.gg$/i.test(url.hostname)) throw new Error("Use a wipefest.gg report link.");
-  const match = url.pathname.match(/^\/report\/([A-Za-z0-9]+)\/fight\/(\d+)\/?$/i);
-  if (!match) throw new Error("Open one specific Wipefest pull, then paste its /report/.../fight/... link.");
-  return { reportCode: match[1], fightId: Number(match[2]), sourceUrl: url.toString() };
+  const match = url.pathname.match(/^\/report\/([A-Za-z0-9]+)\/fight\/(\d+|last)\/?$/i);
+  if (!match) throw new Error("Paste a Wipefest boss pull link ending in /fight/number or /fight/last.");
+  const fightSelector = match[2].toLowerCase();
+  return {
+    reportCode: match[1],
+    fightId: fightSelector === "last" ? "last" as const : Number(fightSelector),
+    sourceUrl: url.toString(),
+  };
+}
+
+export async function resolveWipefestFightId(reportCode: string, fightId: number | "last", request: typeof fetch = fetch) {
+  if (fightId !== "last") return fightId;
+  const reportResponse = await request(`https://api.wipefest.gg/report/${encodeURIComponent(reportCode)}?gameVersion=warcraft-live`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!reportResponse.ok) throw new Error(`Wipefest could not resolve the latest pull (${reportResponse.status}).`);
+  const report = await reportResponse.json() as { fights?: WipefestReportFight[] };
+  const latestFightId = (report.fights ?? [])
+    .filter((fight) => Number.isInteger(Number(fight.id)) && Number.isInteger(Number(fight.difficulty)))
+    .reduce((latest, fight) => Math.max(latest, Number(fight.id)), 0);
+  if (!latestFightId) throw new Error("Wipefest could not find a supported pull at the end of that report.");
+  return latestFightId;
 }
 
 export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRules }: { payload: unknown; sourceUrl: string; bossId: string; existingRules: Array<{ spell_id: number; event_type: string; difficulties_json?: string | null }> }): CalibrationPreview {
@@ -372,10 +393,13 @@ export function buildCalibrationPreview({ payload, sourceUrl, bossId, existingRu
   const counts: Record<CalibrationBand, number> = { "Major issue": 0, "Minor issue": 0, "Positive play": 0, "Raid context": 0 };
   cleaned.forEach((candidate) => { counts[candidate.band] += 1; });
   const parsedUrl = parseWipefestUrl(sourceUrl);
+  const payloadFightId = Number(info.id);
   return {
     bossId,
     reportCode: String(report.id ?? parsedUrl.reportCode),
-    fightId: Number(info.id ?? parsedUrl.fightId),
+    fightId: Number.isInteger(payloadFightId) && payloadFightId > 0
+      ? payloadFightId
+      : typeof parsedUrl.fightId === "number" ? parsedUrl.fightId : 0,
     reportTitle: String(report.title ?? "Wipefest report"),
     bossName: String(info.name ?? "Unknown boss"),
     encounterId,

@@ -1,6 +1,6 @@
 import { ensureSchema } from "../../../db/runtime";
 import { getOfficerSession, officerRequiredResponse } from "../../../lib/officer-access";
-import { buildCalibrationPreview, parseWipefestUrl } from "../../../lib/wipefest-calibration";
+import { buildCalibrationPreview, parseWipefestUrl, resolveWipefestFightId } from "../../../lib/wipefest-calibration";
 
 export const runtime = "edge";
 
@@ -13,7 +13,8 @@ export async function POST(request: Request) {
     const body = await request.json() as { wipefestUrl?: string };
     if (!body.wipefestUrl?.trim()) return Response.json({ error: "Paste one specific Wipefest fight link." }, { status: 400 });
     const parsed = parseWipefestUrl(body.wipefestUrl);
-    const wipefestResponse = await fetch(`https://api.wipefest.gg/report/${encodeURIComponent(parsed.reportCode)}/fight/${parsed.fightId}?gameVersion=warcraft-live`, {
+    const fightId = await resolveWipefestFightId(parsed.reportCode, parsed.fightId);
+    const wipefestResponse = await fetch(`https://api.wipefest.gg/report/${encodeURIComponent(parsed.reportCode)}/fight/${fightId}?gameVersion=warcraft-live`, {
       headers: { Accept: "application/json" },
     });
     if (!wipefestResponse.ok) {
