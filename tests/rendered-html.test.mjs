@@ -87,6 +87,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Pause module/);
   assert.match(app, /Duplicate/);
   assert.match(app, /Save rule changes/);
+  assert.match(app, /Upload another Wipefest boss/);
   assert.match(app, /Keep the season history clean/);
   assert.match(app, /Link mains and alternate characters/);
   assert.match(app, /Roster & alts/);
