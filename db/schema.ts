@@ -54,6 +54,30 @@ export const bosses = sqliteTable("bosses", {
   encounterId: integer("encounter_id").notNull(), raidName: text("raid_name").notNull(), name: text("name").notNull(),
 }, (table) => [uniqueIndex("idx_bosses_season_encounter").on(table.seasonId, table.encounterId)]);
 
+export const reanalysisJobs = sqliteTable("reanalysis_jobs", {
+  id: text("id").primaryKey(),
+  bossId: text("boss_id").notNull().references(() => bosses.id),
+  difficulty: integer("difficulty").notNull(),
+  pullIdsJson: text("pull_ids_json").notNull().default("[]"),
+  completedPullIdsJson: text("completed_pull_ids_json").notNull().default("[]"),
+  status: text("status").notNull().default("queued"),
+  totalPulls: integer("total_pulls").notNull().default(0),
+  completedPulls: integer("completed_pulls").notNull().default(0),
+  currentLabel: text("current_label"),
+  eventRows: integer("event_rows").notNull().default(0),
+  playersPenalized: integer("players_penalized").notNull().default(0),
+  rulesCount: integer("rules_count").notNull().default(0),
+  errorMessage: text("error_message"),
+  retryAfterSeconds: integer("retry_after_seconds"),
+  resumeAfter: text("resume_after"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  completedAt: text("completed_at"),
+}, (table) => [
+  index("idx_reanalysis_jobs_status_updated").on(table.status, table.updatedAt),
+  index("idx_reanalysis_jobs_boss_difficulty").on(table.bossId, table.difficulty, table.updatedAt),
+]);
+
 export const pulls = sqliteTable("pulls", {
   id: text("id").primaryKey(), reportId: text("report_id").notNull().references(() => reports.id),
   bossId: text("boss_id").notNull().references(() => bosses.id), fightId: integer("fight_id").notNull(),

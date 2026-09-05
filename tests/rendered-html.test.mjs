@@ -37,7 +37,7 @@ test("server-renders the link-locked public shell without private raid data", as
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration] = await Promise.all([
+  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration, reanalysisJobs, reanalysisMigration] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import-jobs/route.ts", import.meta.url), "utf8"),
@@ -65,6 +65,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../drizzle/0006_wandering_liz_osborn.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/wcl-status/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0008_sleepy_skreet.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/reanalysis-jobs/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0010_redundant_mysterio.sql", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -88,6 +90,9 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Duplicate/);
   assert.match(app, /Save rule changes/);
   assert.match(app, /Upload another Wipefest boss/);
+  assert.match(app, /Apply rules to .* saved pull/);
+  assert.match(app, /Continue recalculation/);
+  assert.match(app, /saved checkpoint/);
   assert.match(app, /Keep the season history clean/);
   assert.match(app, /Link mains and alternate characters/);
   assert.match(app, /Roster & alts/);
@@ -142,6 +147,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(schema, /scoreModuleSettings/);
   assert.match(schema, /playerIdentities/);
   assert.match(schema, /importJobs/);
+  assert.match(schema, /reanalysisJobs/);
   assert.match(schema, /included: integer\("included"/);
   assert.match(modules, /score_module_settings/);
   assert.match(config, /export async function PATCH/);
@@ -217,6 +223,12 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(accessMigration, /CREATE TABLE `player_access_links`/);
   assert.match(await readFile(new URL("../drizzle/0007_nosy_flatman.sql", import.meta.url), "utf8"), /ADD `token` text/);
   assert.match(importJobMigration, /CREATE TABLE `import_jobs`/);
+  assert.match(reanalysisJobs, /completed_pull_ids_json/);
+  assert.match(reanalysisJobs, /status = 'paused'/);
+  assert.match(reanalysisJobs, /WarcraftLogsRateLimitError/);
+  assert.match(reanalysisJobs, /resetExisting: true/);
+  assert.match(reanalysisJobs, /p\.difficulty = \?/);
+  assert.match(reanalysisMigration, /CREATE TABLE `reanalysis_jobs`/);
   assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
   assert.match(wclStatus, /fetchRateLimitStatus/);
   assert.match(wclStatus, /status: 429/);
@@ -255,7 +267,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(runs, /DELETE FROM officer_notes WHERE raid_night_id/);
   assert.match(importJobs, /UPDATE officer_notes SET pull_id/);
   assert.match(identities, /UPDATE officer_notes SET player_id/);
-  for (const privateRoute of [importer, importJobs, reanalyzer, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
+  for (const privateRoute of [importer, importJobs, reanalyzer, reanalysisJobs, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);
   assert.match(schema, /officerSessions/);
 });

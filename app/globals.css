@@ -662,6 +662,25 @@ tbody tr:last-child td { border-bottom: 0; }
 .calibration-save strong { font-family: Georgia, serif; font-size: 17px; font-weight: 500; }
 .calibration-save span { margin-top: 3px; color: #b8cbce; font-size: 8px; }
 .calibration-save .primary-button { min-height: 39px; margin: 0; color: #163b44; background: #d9eee7; }
+.calibration-save-actions { display: grid; gap: 5px; }
+.calibration-save-actions .review-again { margin: 0; color: #d2e2e3; }
+.calibration-save-actions .review-again:hover { color: #fff; }
+.calibration-reanalysis { margin-top: 12px; padding: 13px; border: 1px solid #c8dcd7; border-radius: 10px; background: #fff; }
+.calibration-reanalysis-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.calibration-reanalysis-heading h3 { margin: 5px 0 0; color: #28474f; font-family: Georgia, serif; font-size: 18px; font-weight: 500; }
+.calibration-reanalysis-heading > span { padding: 5px 8px; border-radius: 999px; color: #246b58; background: #e3f2ed; font-size: 7px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.calibration-reanalysis-list { margin-top: 10px; display: grid; gap: 7px; }
+.reanalysis-job { padding: 10px; display: grid; grid-template-columns: minmax(180px, .8fr) auto minmax(150px, .65fr) minmax(145px, auto); align-items: center; gap: 10px; border: 1px solid #dbe6e3; border-radius: 8px; background: #f8fbfa; }
+.reanalysis-job > div:first-child strong, .reanalysis-job > div:first-child small { display: block; }
+.reanalysis-job > div:first-child strong { color: #315159; font-size: 9px; }
+.reanalysis-job > div:first-child small { margin-top: 3px; color: #7c8e92; font-size: 8px; }
+.reanalysis-job > span { color: #60777c; font-size: 8px; font-weight: 850; white-space: nowrap; }
+.reanalysis-job .import-progress { min-width: 130px; margin: 0; }
+.reanalysis-job > button { min-height: 32px; padding: 7px 9px; border: 1px solid #bcd6cf; border-radius: 7px; color: #285d50; background: #e5f2ee; font-size: 8px; font-weight: 850; cursor: pointer; }
+.reanalysis-job > button:disabled { cursor: wait; opacity: .6; }
+.reanalysis-job > p { grid-column: 1 / -1; margin: 0; color: #98604e; font-size: 8px; line-height: 1.45; }
+.reanalysis-paused, .reanalysis-failed { border-color: #e5d3bd; background: #fbf7f0; }
+.reanalysis-completed { border-color: #bfe0d5; background: #eef8f4; }
 .calibration-status { margin-top: 12px; margin-bottom: 0; }
 .primary-button { width: 100%; margin-top: 16px; padding: 11px 14px; border: 0; border-radius: 8px; color: #fff; background: var(--navy); font-size: 10px; font-weight: 800; cursor: pointer; }
 .primary-button:disabled, .share-button:disabled { cursor: wait; opacity: .65; }
@@ -888,6 +907,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .boss-rule-toolbar { align-items: stretch; }
   .boss-rule-toolbar .share-button { white-space: normal; }
   .score-math, .calibration-form, .calibration-save { grid-template-columns: 1fr; }
+  .reanalysis-job { grid-template-columns: 1fr auto; }
+  .reanalysis-job .import-progress, .reanalysis-job > button { grid-column: 1 / -1; }
   .score-math > b { transform: rotate(90deg); }
   .calibration-source > div:nth-child(2), .calibration-role-tabs { grid-template-columns: 1fr 1fr; }
   .calibration-card-main { grid-template-columns: 1fr auto; }
