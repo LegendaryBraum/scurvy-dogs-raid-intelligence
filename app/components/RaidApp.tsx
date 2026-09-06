@@ -999,13 +999,53 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }
 
   async function reanalyzeBoss() {
-    setBusy(true); setRuleStatus(`Recalculating every saved ${ruleBoss.name} pull…`);
+    setBusy(true); setRuleStatus(`Preparing every saved ${ruleBoss.name} ${ruleDifficulty} pull…`);
     try {
-      const response = await fetch("/api/reanalyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bossId: ruleBossId }) });
-      const result = await response.json() as { error?: string; pulls?: number; events?: number; rules?: number };
-      if (!response.ok) throw new Error(result.error ?? "The saved pulls could not be recalculated.");
+      const startResponse = await fetch("/api/reanalysis-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", bossId: ruleBossId, difficulty: ruleDifficulty }),
+      });
+      const startResult = await startResponse.json() as { job?: ReanalysisJob; error?: string; busy?: boolean };
+      if (!startResponse.ok || !startResult.job) throw new Error(startResult.error ?? "The saved recalculation could not be prepared.");
+      let currentJob = startResult.job;
+      if (startResult.busy) {
+        setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull; try Continue recalculation shortly.`);
+        return;
+      }
+
+      const maximumSteps = Math.max(2, currentJob.totalPulls + 2);
+      for (let step = 0; step < maximumSteps && currentJob.status !== "completed"; step += 1) {
+        setRuleStatus(currentJob.currentLabel ?? `Recalculating ${currentJob.bossName} ${currentJob.difficulty}…`);
+        const response = await fetch("/api/reanalysis-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "process", jobId: currentJob.id }),
+        });
+        const result = await response.json() as { job?: ReanalysisJob; error?: string; busy?: boolean; rateLimited?: boolean };
+        if (!response.ok || !result.job) throw new Error(result.error ?? "That recalculation step could not be completed.");
+        currentJob = result.job;
+        if (result.busy) {
+          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull; continue from this checkpoint shortly.`);
+          return;
+        }
+        if (result.rateLimited || currentJob.status === "paused") {
+          const resumes = currentJob.resumeAfter ? new Date(currentJob.resumeAfter).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : null;
+          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safely complete. Warcraft Logs paused the recalculation${resumes ? `; it can resume around ${resumes}` : ""}.`);
+          return;
+        }
+        if (currentJob.status === "failed") {
+          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. ${currentJob.error ?? "The recalculation stopped at its last checkpoint."}`);
+          return;
+        }
+      }
+
+      if (currentJob.status !== "completed") {
+        setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Continue recalculation to finish the rest.`);
+        return;
+      }
       await refreshAnalysisViews();
-      setRuleStatus(`${result.pulls ?? 0} saved pull${result.pulls === 1 ? "" : "s"} recalculated with ${result.rules ?? 0} rules and ${result.events ?? 0} relevant events.`);
+      setRuleStatus(`${currentJob.totalPulls} saved ${currentJob.bossName} ${currentJob.difficulty} pull${currentJob.totalPulls === 1 ? "" : "s"} recalculated with ${currentJob.rules} rules and ${currentJob.events} relevant events. Player and officer views are current.`);
     } catch (error) { setRuleStatus(error instanceof Error ? error.message : "The saved pulls could not be recalculated."); }
     finally { setBusy(false); }
   }
@@ -1150,7 +1190,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
             <div className="boss-rule-board-heading"><div><p className="eyebrow muted"><span /> Step 2 · {initialData.raid} boss library</p><h2>Choose the boss you want to inspect</h2><p>Uploaded Wipefest rules appear on the matching boss automatically. Configured bosses stay together at the top so they are easy to revisit, followed by encounters that still need calibration.</p></div><div className="boss-rule-progress"><strong>{configuredBossCount}/{configBosses.length}</strong><small>Bosses with active rules</small></div></div>
             <div className="boss-rule-grid" aria-label={`${initialData.raid} bosses`}>{configurationBosses.map((candidate, index) => { const candidateRules = rules.filter((rule) => rule.bossId === candidate.id); const activeCount = candidateRules.filter((rule) => rule.enabled !== false).length; const pullCount = initialData.pulls.filter((pullCandidate) => pullCandidate.bossId === candidate.id).length; return <button aria-pressed={ruleBossId === candidate.id} className={ruleBossId === candidate.id ? "active" : ""} key={candidate.id} onClick={() => { setRuleBossId(candidate.id); setEditingRule(null); setRuleStatus(""); }} type="button"><span className="boss-rule-number">{String(index + 1).padStart(2, "0")}</span><span className="boss-rule-copy"><strong>{candidate.name}</strong><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Needs calibration"} · {pullCount} pull{pullCount === 1 ? "" : "s"}</small></span><span className={`boss-rule-state ${activeCount ? "ready" : "empty"}`}>{activeCount ? "Configured" : "Not started"}</span></button>; })}</div>
           </section>
-          <div className="boss-rule-toolbar"><div><small>Selected boss</small><strong>{ruleBoss.name}</strong><span>{initialData.raid}</span></div><div className="boss-rule-stats"><span><small>Active rules</small><strong>{activeRuleBossRules.length}</strong></span><span><small>Paused rules</small><strong>{ruleBossDifficultyRules.length - activeRuleBossRules.length}</strong></span><span><small>{ruleDifficulty} pulls</small><strong>{ruleBossPulls.length}</strong></span><span><small>Viewing stage</small><strong>{ruleDifficulty}</strong></span></div><button className="share-button" disabled={busy || activeRuleBossRules.length === 0} onClick={reanalyzeBoss} type="button">Recalculate {ruleBoss.name}</button></div>
+          <div className="boss-rule-toolbar"><div><small>Selected boss</small><strong>{ruleBoss.name}</strong><span>{initialData.raid}</span></div><div className="boss-rule-stats"><span><small>Active rules</small><strong>{activeRuleBossRules.length}</strong></span><span><small>Paused rules</small><strong>{ruleBossDifficultyRules.length - activeRuleBossRules.length}</strong></span><span><small>{ruleDifficulty} pulls</small><strong>{ruleBossPulls.length}</strong></span><span><small>Viewing stage</small><strong>{ruleDifficulty}</strong></span></div><button className="share-button" disabled={busy || activeRuleBossRules.length === 0} onClick={reanalyzeBoss} type="button">Recalculate {ruleDifficulty}</button></div>
           <div className="rule-difficulty-tabs" aria-label={`${ruleBoss.name} rule difficulty`} role="tablist">{ruleDifficulties.map((difficulty) => { const difficultyRules = ruleBossRules.filter((rule) => rule.difficulties.length === 0 || rule.difficulties.includes(difficulty)); const activeCount = difficultyRules.filter((rule) => rule.enabled !== false).length; return <button aria-selected={ruleDifficulty === difficulty} className={ruleDifficulty === difficulty ? "active" : ""} key={difficulty} onClick={() => { setRuleDifficulty(difficulty); setEditingRule(null); setRuleStatus(""); }} role="tab" type="button"><span>{difficulty}</span><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Not calibrated"}</small></button>; })}</div>
           {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}
           <section className="config-grid">
