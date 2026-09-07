@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { parseWipefestUrl, resolveWipefestFightId } from "../lib/wipefest-calibration.ts";
+import { evaluateFightRules } from "../lib/rule-evaluator.ts";
 
 async function render(pathname = "/", init = {}) {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -25,6 +26,42 @@ test("accepts Wipefest latest-pull links and resolves them to a numeric fight", 
   assert.equal((await resolveWipefestFightId(parsed.reportCode, 17, async () => { throw new Error("should not fetch"); })), 17);
 });
 
+test("uses the same capped rule findings for audits and stored analysis", () => {
+  const rule = {
+    id: "rule-audit-test",
+    boss_id: "boss-test",
+    spell_id: 12345,
+    name: "Test blast",
+    category: "Avoidable damage",
+    severity: "High",
+    weight: 4,
+    event_type: "damage",
+    difficulties_json: JSON.stringify(["Heroic"]),
+    roles_json: JSON.stringify(["DPS"]),
+    condition_json: JSON.stringify({ minAmount: 1000, maxOccurrencesPerPull: 2, scoringMode: "penalty" }),
+    enabled: 1,
+    updated_at: "2026-09-07T00:00:00.000Z",
+  };
+  const findings = evaluateFightRules({
+    fight: { id: 8, name: "Audit Boss", encounterID: 99, startTime: 10000, endTime: 30000, difficulty: 4 },
+    rules: [rule],
+    participantIds: new Map([[7, "player-1"], [8, "tank-1"]]),
+    participantRoles: new Map([["player-1", "DPS"], ["tank-1", "Tank"]]),
+    abilities: new Map([[12345, { name: "Test Blast", icon: "spell_test" }]]),
+    contextEvents: { deaths: [], interrupts: [], dispels: [] },
+    eventPages: new Map([[12345, [
+      { type: "damage", targetID: 7, abilityGameID: 12345, timestamp: 11000, amount: 900 },
+      { type: "damage", targetID: 7, abilityGameID: 12345, timestamp: 12000, amount: 1500 },
+      { type: "damage", targetID: 7, abilityGameID: 12345, timestamp: 13000, amount: 2500 },
+      { type: "damage", targetID: 7, abilityGameID: 12345, timestamp: 14000, amount: 3500 },
+      { type: "damage", targetID: 8, abilityGameID: 12345, timestamp: 15000, amount: 4500 },
+    ]]]),
+  });
+  assert.equal(findings.length, 2);
+  assert.deepEqual(findings.map((finding) => finding.amount), [1500, 2500]);
+  assert.ok(findings.every((finding) => finding.playerId === "player-1" && finding.scoringMode === "penalty"));
+});
+
 test("server-renders the link-locked public shell without private raid data", async () => {
   const response = await render();
   assert.equal(response.status, 200);
@@ -37,7 +74,7 @@ test("server-renders the link-locked public shell without private raid data", as
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration, reanalysisJobs, reanalysisMigration, smartReanalysisMigration] = await Promise.all([
+  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration, reanalysisJobs, reanalysisMigration, smartReanalysisMigration, ruleAudit, ruleAnalysis] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import-jobs/route.ts", import.meta.url), "utf8"),
@@ -68,6 +105,8 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/reanalysis-jobs/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0010_redundant_mysterio.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0011_fresh_puma.sql", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/rule-audit/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/rule-analysis.ts", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -96,6 +135,10 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /All pulls current/);
   assert.match(app, /Full recalibration/);
   assert.match(app, /Stop after current pull/);
+  assert.match(app, /Test one pull before changing history/);
+  assert.match(app, /Test this rule/);
+  assert.match(app, /Approve & update/);
+  assert.match(app, /projected score/);
   assert.match(app, /saved checkpoint/);
   assert.match(app, /Keep the season history clean/);
   assert.match(app, /Link mains and alternate characters/);
@@ -242,6 +285,11 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(smartReanalysisMigration, /CREATE TABLE `rule_analysis_state`/);
   assert.match(smartReanalysisMigration, /ADD `rule_ids_json`/);
   assert.match(smartReanalysisMigration, /ADD `cancel_requested`/);
+  assert.match(ruleAudit, /evaluateFightRules/);
+  assert.match(ruleAudit, /This rule matched nobody/);
+  assert.match(ruleAudit, /projectedScore/);
+  assert.match(ruleAudit, /status: 429/);
+  assert.match(ruleAnalysis, /evaluateFightRules/);
   assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
   assert.match(wclStatus, /fetchRateLimitStatus/);
   assert.match(wclStatus, /status: 429/);
@@ -280,7 +328,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(runs, /DELETE FROM officer_notes WHERE raid_night_id/);
   assert.match(importJobs, /UPDATE officer_notes SET pull_id/);
   assert.match(identities, /UPDATE officer_notes SET player_id/);
-  for (const privateRoute of [importer, importJobs, reanalyzer, reanalysisJobs, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
+  for (const privateRoute of [importer, importJobs, reanalyzer, reanalysisJobs, ruleAudit, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);
   assert.match(schema, /officerSessions/);
 });
