@@ -81,6 +81,7 @@ export async function POST(request: Request) {
         const contextEvents = { deaths: [], interrupts: [], dispels: [] };
         const result = await analyzeFightRules({
           db,
+          bossId: payload.bossId,
           reportCode: code,
           fight,
           pullId: storedPull.id,

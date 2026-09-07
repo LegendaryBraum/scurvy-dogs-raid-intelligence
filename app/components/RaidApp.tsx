@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element, jsx-a11y/label-has-associated-control, jsx-a11y/no-autofocus, jsx-a11y/no-noninteractive-element-interactions */
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AccessWorkspace, DashboardData, MechanicRule, ModuleSettings, OfficerNote, OfficerPlayerHistory, PlayerHistoryPoint, PlayerSnapshot, RaidEvent, RaidNightRecord, RaidReportRecord, RosterMember, ScoreKey } from "../../lib/types";
 import type { CalibrationBand, CalibrationCandidate, CalibrationPreview } from "../../lib/wipefest-calibration";
 import { CoachingNotes } from "./CoachingNotes";
@@ -16,8 +16,8 @@ type ImportGroup = { id: string; label: string; description: string; kind: "raid
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 type WclAllowance = { state: "checking" | "ready" | "low" | "full" | "unavailable"; percentRemaining?: number; pointsResetIn?: number; error?: string };
 type ImportJob = { id: string; reportCode: string; reportUrl: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
-type ReanalysisJob = { id: string; bossId: string; bossName: string; difficulty: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; events: number; playerScoreUpdates: number; rules: number; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
-type ReanalysisPlan = { bossId: string; bossName: string; difficulty: string; pullCount: number; ruleCount: number };
+type ReanalysisJob = { id: string; bossId: string; bossName: string; difficulty: string; status: "queued" | "processing" | "paused" | "failed" | "stopped" | "completed"; mode: "changed" | "full"; cancelRequested?: boolean; totalPulls: number; completedPulls: number; currentLabel?: string | null; events: number; playerScoreUpdates: number; rules: number; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
+type ReanalysisPlan = { bossId: string; bossName: string; difficulty: string; pullCount: number; ruleCount: number; fullPullCount: number; activeRuleCount: number; current: boolean };
 type DifficultyOption = { value: number; label: string };
 const scoreLabels: Record<ScoreKey, string> = { mechanics: "Mechanics", performance: "Performance", attendance: "Attendance", preparation: "Preparation" };
 const scoreKeys: ScoreKey[] = ["mechanics", "performance", "attendance", "preparation"];
@@ -100,6 +100,7 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved, onRean
   const [savedThisSession, setSavedThisSession] = useState(false);
   const [reanalysisPlan, setReanalysisPlan] = useState<ReanalysisPlan | null>(null);
   const [reanalysisJobs, setReanalysisJobs] = useState<ReanalysisJob[]>([]);
+  const stopRequested = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -214,11 +215,19 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved, onRean
   async function runReanalysis(existingJob?: ReanalysisJob) {
     if (!existingJob && !reanalysisPlan) { setStatus("Save a reviewed boss configuration before applying it to stored pulls."); return; }
     setBusy(true);
+    stopRequested.current = false;
     let currentJob = existingJob;
     try {
+      if (currentJob?.status === "stopped") {
+        const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resume", jobId: currentJob.id }) });
+        const result = await response.json() as { job?: ReanalysisJob; error?: string };
+        if (!response.ok || !result.job) throw new Error(result.error ?? "The recalculation could not be resumed.");
+        currentJob = result.job;
+        upsertReanalysisJob(currentJob);
+      }
       if (!currentJob) {
-        setStatus(`Preparing ${reanalysisPlan!.pullCount} saved ${reanalysisPlan!.bossName} ${reanalysisPlan!.difficulty} pull${reanalysisPlan!.pullCount === 1 ? "" : "s"}…`);
-        const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", bossId: reanalysisPlan!.bossId, difficulty: reanalysisPlan!.difficulty }) });
+        setStatus(`Preparing ${reanalysisPlan!.ruleCount} changed rule${reanalysisPlan!.ruleCount === 1 ? "" : "s"} across ${reanalysisPlan!.pullCount} affected pull${reanalysisPlan!.pullCount === 1 ? "" : "s"}…`);
+        const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start", mode: "changed", bossId: reanalysisPlan!.bossId, difficulty: reanalysisPlan!.difficulty }) });
         const result = await response.json() as { job?: ReanalysisJob; error?: string };
         if (!response.ok || !result.job) throw new Error(result.error ?? "The recalculation could not be prepared.");
         currentJob = result.job;
@@ -226,13 +235,15 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved, onRean
       }
 
       const maximumSteps = Math.max(2, currentJob.totalPulls + 2);
-      for (let step = 0; step < maximumSteps && currentJob.status !== "completed"; step += 1) {
+      for (let step = 0; step < maximumSteps && currentJob.status !== "completed" && currentJob.status !== "stopped"; step += 1) {
+        if (stopRequested.current) return;
         setStatus(currentJob.currentLabel ?? `Recalculating ${currentJob.bossName} ${currentJob.difficulty}…`);
         const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "process", jobId: currentJob.id }) });
         const result = await response.json() as { job?: ReanalysisJob; error?: string; busy?: boolean; rateLimited?: boolean };
         if (!response.ok || !result.job) throw new Error(result.error ?? "That recalculation step could not be completed.");
         currentJob = result.job;
         upsertReanalysisJob(currentJob);
+        if (stopRequested.current || currentJob.status === "stopped") { setStatus(currentJob.currentLabel ?? "Stopped safely at the last completed pull."); return; }
         if (result.busy) { setStatus("Another session is finishing this pull. Its saved progress will appear here shortly."); return; }
         if (currentJob.status === "paused") { setStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safely complete. ${currentJob.error ?? "Warcraft Logs asked the app to pause."}`); return; }
         if (currentJob.status === "failed") { setStatus(currentJob.error ?? "The recalculation paused at its last safe checkpoint."); return; }
@@ -249,6 +260,18 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved, onRean
     finally { setBusy(false); }
   }
 
+  async function stopReanalysis(job: ReanalysisJob) {
+    stopRequested.current = true;
+    setStatus("Stopping safely after the current pull…");
+    try {
+      const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop", jobId: job.id }) });
+      const result = await response.json() as { job?: ReanalysisJob; error?: string };
+      if (!response.ok || !result.job) throw new Error(result.error ?? "The recalculation could not be stopped.");
+      upsertReanalysisJob(result.job);
+      setStatus(result.job.status === "stopped" ? "Stopped safely. Resume from the saved checkpoint whenever you are ready." : "Stop requested. The current pull will finish, then the recalculation will pause.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "The recalculation could not be stopped."); }
+  }
+
   const visibleCandidates = roleFilter === "All" ? candidates : candidates.filter((candidate) => candidate.roles.includes(roleFilter));
   const selectedCount = candidates.filter((candidate) => candidate.selected && !candidate.alreadyConfigured).length;
   const alreadySaved = candidates.some((candidate) => candidate.alreadyConfigured) && selectedCount === 0;
@@ -259,9 +282,9 @@ function WipefestCalibrationWizard({ disabled, onBossIdentified, onSaved, onRean
       <div className="calibration-source"><div><small>{preview.difficulty} · Pull {preview.fightId}</small><strong>{preview.bossName}</strong><span>{preview.reportTitle}</span></div><div>{calibrationBands.map((band) => <span className={`calibration-count calibration-count-${band.split(" ")[0].toLowerCase()}`} key={band}><strong>{candidates.filter((candidate) => candidate.band === band).length}</strong>{band}</span>)}</div><button className="review-again" disabled={busy} onClick={reset} type="button">Use another link</button></div>
       <div className="calibration-role-tabs" aria-label="Filter mechanics by role" role="tablist">{(["All", ...calibrationRoles] as const).map((role) => <button aria-selected={roleFilter === role} className={roleFilter === role ? "active" : ""} key={role} onClick={() => setRoleFilter(role)} role="tab" type="button">{role === "All" ? "All roles" : role === "Tank" ? "Tanks" : role === "Healer" ? "Healers" : "DPS"}<small>{role === "All" ? candidates.length : candidates.filter((candidate) => candidate.roles.includes(role)).length}</small></button>)}</div>
       <div className="calibration-bands">{calibrationBands.map((band) => { const items = visibleCandidates.filter((candidate) => candidate.band === band); if (!items.length) return null; return <section className={`calibration-band band-${band.split(" ")[0].toLowerCase()}`} key={band}><header><div><strong>{band}</strong><small>{band === "Major issue" ? "High-impact failures worth clear penalties" : band === "Minor issue" ? "Correctable mistakes with lighter penalties" : band === "Positive play" ? "Credit shown as evidence, never bonus points" : "Useful raid information that is not fair to blame on one player"}</small></div><span>{items.length}</span></header><div className="calibration-cards">{items.map((candidate) => <article className={`calibration-card ${candidate.selected ? "selected" : ""} ${candidate.alreadyConfigured ? "configured" : ""}`} key={candidate.id}><div className="calibration-card-main"><label className="calibration-select"><input checked={candidate.selected} disabled={candidate.alreadyConfigured || candidate.scoringMode === "context" || !candidate.spellId || !candidate.eventType} onChange={(event) => updateCandidate(candidate.id, { selected: event.target.checked })} type="checkbox" /><span>{candidate.alreadyConfigured ? "Already configured" : candidate.scoringMode === "context" ? "Context only" : candidate.selected ? "Include" : "Excluded"}</span></label>{candidate.spellId ? <SpellIcon icon={candidate.icon} name={candidate.name} spellId={candidate.spellId} /> : <span className="calibration-context-icon">i</span>}<div><strong>{candidate.name}</strong><p>{candidate.description}</p><small>{candidate.spellId ? `Spell ${candidate.spellId} · ${candidate.eventType}` : "No fair player event"} · {candidate.confidence}</small></div><span className={`severity severity-${candidate.severity.toLowerCase()}`}>{candidate.severity}</span></div><div className="calibration-evidence"><span><small>Score effect</small><strong>{calibrationImpact(candidate)}</strong></span><span><small>Wipefest comparison</small><strong>{candidate.wipefestPercentile === null ? "Not scored" : `${candidate.wipefestPercentile}th percentile`}</strong></span><p>{candidate.confidenceReason}</p></div>{candidate.scoringMode !== "context" && !candidate.alreadyConfigured && <div className="calibration-controls"><label>Severity<select value={candidate.severity} onChange={(event) => updateCandidate(candidate.id, { severity: event.target.value as MechanicRule["severity"] })}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select></label><label>Points per match<input disabled={candidate.scoringMode !== "penalty"} min="0" onChange={(event) => updateCandidate(candidate.id, { weight: Math.max(0, Number(event.target.value) || 0) })} type="number" value={candidate.weight} /></label><label>Maximum matches<input disabled={candidate.scoringMode !== "penalty"} min="1" onChange={(event) => updateCandidate(candidate.id, { maxOccurrencesPerPull: Math.max(1, Number(event.target.value) || 1) })} type="number" value={candidate.maxOccurrencesPerPull ?? 1} /></label><fieldset><legend>Applies to</legend>{calibrationRoles.map((role) => <label key={role}><input checked={candidate.roles.includes(role)} onChange={() => changeRole(candidate, role)} type="checkbox" /> {role}</label>)}</fieldset></div>}</article>)}</div></section>; })}</div>
-      <div className="calibration-save"><div><strong>{savedThisSession ? `${preview.bossName} ${preview.difficulty} was saved` : alreadySaved ? `${preview.bossName} ${preview.difficulty} is already saved` : `${selectedCount} ${preview.difficulty} rule${selectedCount === 1 ? "" : "s"} selected`}</strong><span>{savedThisSession ? reanalysisPlan?.pullCount ? `${reanalysisPlan.pullCount} existing ${preview.difficulty} pull${reanalysisPlan.pullCount === 1 ? "" : "s"} can now be updated with these rules.` : "This configuration is ready and will be used by future imports." : alreadySaved ? `Open the ${preview.difficulty} tab on its boss card below to review the stored rules.` : "Review severity, points, caps, and roles before saving."}</span></div>{savedThisSession ? <div className="calibration-save-actions">{reanalysisPlan?.pullCount ? <button className="primary-button" disabled={busy || disabled} onClick={() => runReanalysis()} type="button">{busy ? "Applying rules…" : `Apply rules to ${reanalysisPlan.pullCount} saved pull${reanalysisPlan.pullCount === 1 ? "" : "s"}`}</button> : null}<button className={reanalysisPlan?.pullCount ? "review-again" : "primary-button"} disabled={busy} onClick={reset} type="button">Upload another Wipefest boss</button></div> : <button className="primary-button" disabled={busy || disabled || selectedCount === 0} onClick={saveSelected} type="button">{busy ? "Saving reviewed rules…" : alreadySaved ? `${preview.difficulty} already configured` : `Save ${selectedCount} reviewed rule${selectedCount === 1 ? "" : "s"}`}</button>}</div>
+      <div className="calibration-save"><div><strong>{savedThisSession ? `${preview.bossName} ${preview.difficulty} was saved` : alreadySaved ? `${preview.bossName} ${preview.difficulty} is already saved` : `${selectedCount} ${preview.difficulty} rule${selectedCount === 1 ? "" : "s"} selected`}</strong><span>{savedThisSession ? reanalysisPlan?.pullCount ? `${reanalysisPlan.ruleCount} changed rule${reanalysisPlan.ruleCount === 1 ? "" : "s"} affect${reanalysisPlan.ruleCount === 1 ? "s" : ""} ${reanalysisPlan.pullCount} existing ${preview.difficulty} pull${reanalysisPlan.pullCount === 1 ? "" : "s"}.` : "This configuration is current and will be used automatically by future imports." : alreadySaved ? `Open the ${preview.difficulty} tab on its boss card below to review the stored rules.` : "Review severity, points, caps, and roles before saving."}</span></div>{savedThisSession ? <div className="calibration-save-actions">{reanalysisPlan?.pullCount ? <button className="primary-button" disabled={busy || disabled} onClick={() => runReanalysis()} type="button">{busy ? "Updating affected pulls…" : `Update ${reanalysisPlan.pullCount} affected pull${reanalysisPlan.pullCount === 1 ? "" : "s"}`}</button> : null}<button className={reanalysisPlan?.pullCount ? "review-again" : "primary-button"} disabled={busy} onClick={reset} type="button">Upload another Wipefest boss</button></div> : <button className="primary-button" disabled={busy || disabled || selectedCount === 0} onClick={saveSelected} type="button">{busy ? "Saving reviewed rules…" : alreadySaved ? `${preview.difficulty} already configured` : `Save ${selectedCount} reviewed rule${selectedCount === 1 ? "" : "s"}`}</button>}</div>
     </>}
-    {reanalysisJobs.length > 0 && <section className="calibration-reanalysis" aria-label="Saved score recalculations"><div className="calibration-reanalysis-heading"><div><p className="eyebrow muted"><span /> Saved recalculation</p><h3>Keep rule changes and dashboards in sync</h3></div><span>{reanalysisJobs.length} active</span></div><div className="calibration-reanalysis-list">{reanalysisJobs.map((job) => { const percent = job.totalPulls ? Math.round(job.completedPulls / job.totalPulls * 100) : 0; return <article className={`reanalysis-job reanalysis-${job.status}`} key={job.id}><div><strong>{job.bossName} · {job.difficulty}</strong><small>{job.currentLabel ?? "Ready to continue"}</small></div><span>{job.completedPulls}/{job.totalPulls} pulls</span><div className="import-progress" aria-label={`${job.completedPulls} of ${job.totalPulls} pulls recalculated`}><i style={{ width: `${percent}%` }} /></div><button disabled={busy || disabled || job.status === "completed"} onClick={() => runReanalysis(job)} type="button">{job.status === "completed" ? "Dashboards current" : busy ? "Working…" : job.status === "paused" ? "Try resume now" : job.status === "failed" ? "Retry from checkpoint" : "Continue recalculation"}</button>{job.error && job.status !== "completed" ? <p>{job.error}</p> : null}</article>; })}</div></section>}
+    {reanalysisJobs.length > 0 && <section className="calibration-reanalysis" aria-label="Saved score recalculations"><div className="calibration-reanalysis-heading"><div><p className="eyebrow muted"><span /> Saved recalculation</p><h3>Keep rule changes and dashboards in sync</h3></div><span>{reanalysisJobs.length} active</span></div><div className="calibration-reanalysis-list">{reanalysisJobs.map((job) => { const percent = job.totalPulls ? Math.round(job.completedPulls / job.totalPulls * 100) : 0; return <article className={`reanalysis-job reanalysis-${job.status}`} key={job.id}><div><strong>{job.bossName} · {job.difficulty}</strong><small>{job.currentLabel ?? "Ready to continue"}</small></div><span>{job.completedPulls}/{job.totalPulls} pulls</span><div className="import-progress" aria-label={`${job.completedPulls} of ${job.totalPulls} pulls recalculated`}><i style={{ width: `${percent}%` }} /></div><div className="reanalysis-job-actions"><button disabled={busy || disabled || job.status === "completed"} onClick={() => runReanalysis(job)} type="button">{job.status === "completed" ? "Dashboards current" : busy ? "Working…" : job.status === "stopped" ? "Resume from checkpoint" : job.status === "paused" ? "Try resume now" : job.status === "failed" ? "Retry from checkpoint" : "Continue recalculation"}</button>{job.status !== "completed" && job.status !== "stopped" ? <button className="danger-text" disabled={job.cancelRequested} onClick={() => stopReanalysis(job)} type="button">{job.cancelRequested ? "Stopping…" : "Stop after current pull"}</button> : null}</div>{job.error && job.status !== "completed" ? <p>{job.error}</p> : null}</article>; })}</div></section>}
     {status && <p className="config-status calibration-status" role="status">{status}</p>}
   </article>;
 }
@@ -454,10 +477,23 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [ruleReanalysisPlan, setRuleReanalysisPlan] = useState<ReanalysisPlan | null>(null);
+  const [activeRuleReanalysisJob, setActiveRuleReanalysisJob] = useState<ReanalysisJob | null>(null);
+  const [stoppingReanalysis, setStoppingReanalysis] = useState(false);
   const [accessState, setAccessState] = useState<"checking" | "granted" | "denied">("checking");
   const [officerName, setOfficerName] = useState("");
   const requestedIconSets = useRef(new Set<string>());
+  const stopRuleReanalysisRef = useRef(false);
   const historyDifficulty = initialData.pulls.find((candidate) => candidate.id === pullId)?.difficulty ?? initialData.pulls[0]?.difficulty ?? "Normal";
+
+  const loadRuleReanalysisPlan = useCallback(async (selectedBossId: string, selectedDifficulty: string) => {
+    const response = await fetch(`/api/reanalysis-jobs?bossId=${encodeURIComponent(selectedBossId)}&difficulty=${encodeURIComponent(selectedDifficulty)}`, { cache: "no-store" });
+    const result = await response.json() as { plan?: ReanalysisPlan | null; jobs?: ReanalysisJob[]; error?: string };
+    if (!response.ok) throw new Error(result.error ?? "The recalculation status could not be loaded.");
+    setRuleReanalysisPlan(result.plan ?? null);
+    setActiveRuleReanalysisJob((result.jobs ?? []).find((job) => job.bossId === selectedBossId && job.difficulty === selectedDifficulty) ?? null);
+    return result.plan ?? null;
+  }, []);
 
   function applyDashboard(nextData: DashboardData) {
     const nextBossId = nextData.bosses.some((candidate) => candidate.id === bossId) ? bossId : nextData.bosses[0].id;
@@ -613,6 +649,27 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       .catch(() => undefined);
     return () => { active = false; };
   }, [accessState, importOpen]);
+
+  useEffect(() => {
+    if (accessState !== "granted") return;
+    let active = true;
+    fetch(`/api/reanalysis-jobs?bossId=${encodeURIComponent(ruleBossId)}&difficulty=${encodeURIComponent(ruleDifficulty)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const result = await response.json() as { plan?: ReanalysisPlan | null; jobs?: ReanalysisJob[]; error?: string };
+        if (!response.ok) throw new Error(result.error ?? "The recalculation status could not be loaded.");
+        if (!active) return;
+        setRuleReanalysisPlan(result.plan ?? null);
+        setActiveRuleReanalysisJob((result.jobs ?? []).find((job) => job.bossId === ruleBossId && job.difficulty === ruleDifficulty) ?? null);
+      })
+      .catch((error) => {
+        if (active) {
+          setRuleReanalysisPlan(null);
+          setActiveRuleReanalysisJob(null);
+          setRuleStatus(error instanceof Error ? error.message : "The recalculation status could not be loaded.");
+        }
+      });
+    return () => { active = false; };
+  }, [accessState, ruleBossId, ruleDifficulty, rules]);
 
   const boss = initialData.bosses.find((candidate) => candidate.id === bossId) ?? initialData.bosses[0];
   const configBosses = initialData.configBosses?.length ? initialData.configBosses : initialData.bosses;
@@ -998,24 +1055,48 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     setHistoryRevision((revision) => revision + 1);
   }
 
-  async function reanalyzeBoss() {
-    setBusy(true); setRuleStatus(`Preparing every saved ${ruleBoss.name} ${ruleDifficulty} pull…`);
+  async function reanalyzeBoss(mode: "changed" | "full" = "changed", existingJob?: ReanalysisJob) {
+    if (mode === "full") {
+      const pullCount = ruleReanalysisPlan?.fullPullCount ?? ruleBossPulls.length;
+      if (!window.confirm(`Full recalibration will rebuild all ${pullCount} saved ${ruleBoss.name} ${ruleDifficulty} pulls. Use this only for recovery or a scoring-engine change. Continue?`)) return;
+    }
+    setBusy(true);
+    stopRuleReanalysisRef.current = false;
+    setRuleStatus(mode === "full"
+      ? `Preparing a full recalibration of ${ruleBoss.name} ${ruleDifficulty}…`
+      : `Preparing ${ruleReanalysisPlan?.ruleCount ?? 0} changed rule${ruleReanalysisPlan?.ruleCount === 1 ? "" : "s"} across ${ruleReanalysisPlan?.pullCount ?? 0} affected pull${ruleReanalysisPlan?.pullCount === 1 ? "" : "s"}…`);
     try {
-      const startResponse = await fetch("/api/reanalysis-jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "start", bossId: ruleBossId, difficulty: ruleDifficulty }),
-      });
-      const startResult = await startResponse.json() as { job?: ReanalysisJob; error?: string; busy?: boolean };
-      if (!startResponse.ok || !startResult.job) throw new Error(startResult.error ?? "The saved recalculation could not be prepared.");
-      let currentJob = startResult.job;
-      if (startResult.busy) {
-        setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull; try Continue recalculation shortly.`);
-        return;
+      let currentJob = existingJob;
+      if (currentJob?.status === "stopped") {
+        const resumeResponse = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resume", jobId: currentJob.id }) });
+        const resumeResult = await resumeResponse.json() as { job?: ReanalysisJob; error?: string };
+        if (!resumeResponse.ok || !resumeResult.job) throw new Error(resumeResult.error ?? "The recalculation could not be resumed.");
+        currentJob = resumeResult.job;
+        setActiveRuleReanalysisJob(currentJob);
+      }
+      if (!currentJob) {
+        const startResponse = await fetch("/api/reanalysis-jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", mode, bossId: ruleBossId, difficulty: ruleDifficulty }),
+        });
+        const startResult = await startResponse.json() as { job?: ReanalysisJob; error?: string; busy?: boolean };
+        if (!startResponse.ok || !startResult.job) throw new Error(startResult.error ?? "The saved recalculation could not be prepared.");
+        currentJob = startResult.job;
+        setActiveRuleReanalysisJob(currentJob);
+        if (startResult.busy) {
+          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull.`);
+          return;
+        }
+        if (currentJob.status === "stopped") {
+          setRuleStatus("This recalculation is stopped at a safe checkpoint. Use Resume when you are ready.");
+          return;
+        }
       }
 
       const maximumSteps = Math.max(2, currentJob.totalPulls + 2);
-      for (let step = 0; step < maximumSteps && currentJob.status !== "completed"; step += 1) {
+      for (let step = 0; step < maximumSteps && currentJob.status !== "completed" && currentJob.status !== "stopped"; step += 1) {
+        if (stopRuleReanalysisRef.current) return;
         setRuleStatus(currentJob.currentLabel ?? `Recalculating ${currentJob.bossName} ${currentJob.difficulty}…`);
         const response = await fetch("/api/reanalysis-jobs", {
           method: "POST",
@@ -1025,8 +1106,13 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         const result = await response.json() as { job?: ReanalysisJob; error?: string; busy?: boolean; rateLimited?: boolean };
         if (!response.ok || !result.job) throw new Error(result.error ?? "That recalculation step could not be completed.");
         currentJob = result.job;
+        setActiveRuleReanalysisJob(currentJob);
+        if (stopRuleReanalysisRef.current || currentJob.status === "stopped") {
+          setRuleStatus(currentJob.currentLabel ?? "Stopped safely at the last completed pull.");
+          return;
+        }
         if (result.busy) {
-          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull; continue from this checkpoint shortly.`);
+          setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Another session is finishing the current pull.`);
           return;
         }
         if (result.rateLimited || currentJob.status === "paused") {
@@ -1041,13 +1127,30 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
       }
 
       if (currentJob.status !== "completed") {
-        setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Continue recalculation to finish the rest.`);
+        setRuleStatus(`${currentJob.completedPulls} of ${currentJob.totalPulls} pulls are safe. Continue from this checkpoint to finish the rest.`);
         return;
       }
       await refreshAnalysisViews();
-      setRuleStatus(`${currentJob.totalPulls} saved ${currentJob.bossName} ${currentJob.difficulty} pull${currentJob.totalPulls === 1 ? "" : "s"} recalculated with ${currentJob.rules} rules and ${currentJob.events} relevant events. Player and officer views are current.`);
+      await loadRuleReanalysisPlan(ruleBossId, ruleDifficulty);
+      setActiveRuleReanalysisJob(null);
+      setRuleStatus(`${currentJob.mode === "full" ? "Full recalibration" : "Changed-rule update"} complete for ${currentJob.totalPulls} ${currentJob.bossName} ${currentJob.difficulty} pull${currentJob.totalPulls === 1 ? "" : "s"}. Player and officer views are current.`);
     } catch (error) { setRuleStatus(error instanceof Error ? error.message : "The saved pulls could not be recalculated."); }
     finally { setBusy(false); }
+  }
+
+  async function stopRuleReanalysis() {
+    if (!activeRuleReanalysisJob) return;
+    stopRuleReanalysisRef.current = true;
+    setStoppingReanalysis(true);
+    setRuleStatus("Stopping safely after the current pull…");
+    try {
+      const response = await fetch("/api/reanalysis-jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop", jobId: activeRuleReanalysisJob.id }) });
+      const result = await response.json() as { job?: ReanalysisJob; error?: string };
+      if (!response.ok || !result.job) throw new Error(result.error ?? "The recalculation could not be stopped.");
+      setActiveRuleReanalysisJob(result.job);
+      setRuleStatus(result.job.status === "stopped" ? "Stopped safely. Resume from this checkpoint whenever you are ready." : "Stop requested. The current pull will finish, then the recalculation will pause.");
+    } catch (error) { setRuleStatus(error instanceof Error ? error.message : "The recalculation could not be stopped."); }
+    finally { setStoppingReanalysis(false); }
   }
 
   async function updateRoster(member: RosterMember) {
@@ -1190,7 +1293,8 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
             <div className="boss-rule-board-heading"><div><p className="eyebrow muted"><span /> Step 2 · {initialData.raid} boss library</p><h2>Choose the boss you want to inspect</h2><p>Uploaded Wipefest rules appear on the matching boss automatically. Configured bosses stay together at the top so they are easy to revisit, followed by encounters that still need calibration.</p></div><div className="boss-rule-progress"><strong>{configuredBossCount}/{configBosses.length}</strong><small>Bosses with active rules</small></div></div>
             <div className="boss-rule-grid" aria-label={`${initialData.raid} bosses`}>{configurationBosses.map((candidate, index) => { const candidateRules = rules.filter((rule) => rule.bossId === candidate.id); const activeCount = candidateRules.filter((rule) => rule.enabled !== false).length; const pullCount = initialData.pulls.filter((pullCandidate) => pullCandidate.bossId === candidate.id).length; return <button aria-pressed={ruleBossId === candidate.id} className={ruleBossId === candidate.id ? "active" : ""} key={candidate.id} onClick={() => { setRuleBossId(candidate.id); setEditingRule(null); setRuleStatus(""); }} type="button"><span className="boss-rule-number">{String(index + 1).padStart(2, "0")}</span><span className="boss-rule-copy"><strong>{candidate.name}</strong><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Needs calibration"} · {pullCount} pull{pullCount === 1 ? "" : "s"}</small></span><span className={`boss-rule-state ${activeCount ? "ready" : "empty"}`}>{activeCount ? "Configured" : "Not started"}</span></button>; })}</div>
           </section>
-          <div className="boss-rule-toolbar"><div><small>Selected boss</small><strong>{ruleBoss.name}</strong><span>{initialData.raid}</span></div><div className="boss-rule-stats"><span><small>Active rules</small><strong>{activeRuleBossRules.length}</strong></span><span><small>Paused rules</small><strong>{ruleBossDifficultyRules.length - activeRuleBossRules.length}</strong></span><span><small>{ruleDifficulty} pulls</small><strong>{ruleBossPulls.length}</strong></span><span><small>Viewing stage</small><strong>{ruleDifficulty}</strong></span></div><button className="share-button" disabled={busy || activeRuleBossRules.length === 0} onClick={reanalyzeBoss} type="button">Recalculate {ruleDifficulty}</button></div>
+          <div className="boss-rule-toolbar"><div><small>Selected boss</small><strong>{ruleBoss.name}</strong><span>{initialData.raid}</span></div><div className="boss-rule-stats"><span><small>Active rules</small><strong>{activeRuleBossRules.length}</strong></span><span><small>Paused rules</small><strong>{ruleBossDifficultyRules.length - activeRuleBossRules.length}</strong></span><span><small>{ruleDifficulty} pulls</small><strong>{ruleBossPulls.length}</strong></span><span><small>Viewing stage</small><strong>{ruleDifficulty}</strong></span></div><div className="boss-rule-actions"><button className="share-button" disabled={busy || Boolean(activeRuleReanalysisJob) || !ruleReanalysisPlan || ruleReanalysisPlan.current || ruleReanalysisPlan.activeRuleCount === 0} onClick={() => reanalyzeBoss("changed")} type="button">{!ruleReanalysisPlan ? "Checking changes…" : ruleReanalysisPlan.current ? "All pulls current" : `Update ${ruleReanalysisPlan.ruleCount} changed rule${ruleReanalysisPlan.ruleCount === 1 ? "" : "s"}`}</button><button className="full-recalibration" disabled={busy || Boolean(activeRuleReanalysisJob) || !ruleReanalysisPlan?.fullPullCount || ruleReanalysisPlan.activeRuleCount === 0} onClick={() => reanalyzeBoss("full")} type="button">Full recalibration</button><small>New log imports use current rules automatically. Recalculation is only needed after a rule changes.</small></div></div>
+          {activeRuleReanalysisJob && <article className={`boss-reanalysis-progress reanalysis-${activeRuleReanalysisJob.status}`}><div><small>{activeRuleReanalysisJob.mode === "full" ? "Full recalibration" : "Changed-rule update"}</small><strong>{activeRuleReanalysisJob.currentLabel ?? "Ready to continue"}</strong><span>{activeRuleReanalysisJob.completedPulls} of {activeRuleReanalysisJob.totalPulls} affected pulls safely complete</span></div><div className="import-progress" aria-label={`${activeRuleReanalysisJob.completedPulls} of ${activeRuleReanalysisJob.totalPulls} pulls recalculated`}><i style={{ width: `${activeRuleReanalysisJob.totalPulls ? Math.round(activeRuleReanalysisJob.completedPulls / activeRuleReanalysisJob.totalPulls * 100) : 0}%` }} /></div><div className="boss-reanalysis-controls"><button disabled={busy} onClick={() => reanalyzeBoss(activeRuleReanalysisJob.mode, activeRuleReanalysisJob)} type="button">{activeRuleReanalysisJob.status === "stopped" ? "Resume from checkpoint" : activeRuleReanalysisJob.status === "paused" ? "Try resume now" : activeRuleReanalysisJob.status === "failed" ? "Retry from checkpoint" : busy ? "Working…" : "Continue recalculation"}</button>{activeRuleReanalysisJob.status !== "stopped" && <button className="danger-text" disabled={stoppingReanalysis || activeRuleReanalysisJob.cancelRequested} onClick={stopRuleReanalysis} type="button">{stoppingReanalysis || activeRuleReanalysisJob.cancelRequested ? "Stopping…" : "Stop after current pull"}</button>}</div></article>}
           <div className="rule-difficulty-tabs" aria-label={`${ruleBoss.name} rule difficulty`} role="tablist">{ruleDifficulties.map((difficulty) => { const difficultyRules = ruleBossRules.filter((rule) => rule.difficulties.length === 0 || rule.difficulties.includes(difficulty)); const activeCount = difficultyRules.filter((rule) => rule.enabled !== false).length; return <button aria-selected={ruleDifficulty === difficulty} className={ruleDifficulty === difficulty ? "active" : ""} key={difficulty} onClick={() => { setRuleDifficulty(difficulty); setEditingRule(null); setRuleStatus(""); }} role="tab" type="button"><span>{difficulty}</span><small>{activeCount ? `${activeCount} active rule${activeCount === 1 ? "" : "s"}` : "Not calibrated"}</small></button>; })}</div>
           {ruleStatus && <p className="config-status" role="status">{ruleStatus}</p>}
           <section className="config-grid">

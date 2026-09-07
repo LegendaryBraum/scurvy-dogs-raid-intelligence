@@ -106,6 +106,7 @@ async function removeReport(db: D1Database, reportId: string) {
   await db.batch([
     db.prepare("DELETE FROM officer_notes WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
+    db.prepare("DELETE FROM rule_analysis_state WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pulls WHERE report_id = ?").bind(reportId),
@@ -116,6 +117,7 @@ async function removeReport(db: D1Database, reportId: string) {
 async function removeStagedPull(db: D1Database, pullId: string) {
   await db.batch([
     db.prepare("DELETE FROM shares WHERE pull_id = ?").bind(pullId),
+    db.prepare("DELETE FROM rule_analysis_state WHERE pull_id = ?").bind(pullId),
     db.prepare("DELETE FROM events WHERE pull_id = ?").bind(pullId),
     db.prepare("DELETE FROM pull_players WHERE pull_id = ?").bind(pullId),
     db.prepare("DELETE FROM pulls WHERE id = ?").bind(pullId),
@@ -187,6 +189,7 @@ async function finalizeJob(db: D1Database, job: ImportJobRow) {
       )`).bind(job.staging_report_id, existing.id, existing.id, job.staging_report_id, existing.id),
       db.prepare("UPDATE officer_notes SET pull_id = NULL WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
+      db.prepare("DELETE FROM rule_analysis_state WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(existing.id),
       db.prepare("DELETE FROM pulls WHERE report_id = ?").bind(existing.id),
@@ -272,7 +275,7 @@ async function processFight(db: D1Database, job: ImportJobRow, snapshot: JobSnap
   }
   if (contextStatements.length) await db.batch(contextStatements);
   const analyzed = await analyzeFightRules({
-    db, reportCode: job.report_code, fight, pullId, token, rules: configured.results, participantIds, participantRoles, abilities, contextEvents,
+    db, bossId, reportCode: job.report_code, fight, pullId, token, rules: configured.results, participantIds, participantRoles, abilities, contextEvents,
     eventPages: groupRuleEventsByAbility(ruleEvents, scoredRules.map((rule) => rule.spell_id)),
   });
   eventRows += analyzed.eventRows;

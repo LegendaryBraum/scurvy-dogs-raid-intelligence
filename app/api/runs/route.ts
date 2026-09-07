@@ -99,6 +99,7 @@ async function permanentlyDeleteReport(db: D1Database, reportId: string) {
   await db.batch([
     db.prepare("DELETE FROM officer_notes WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM shares WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
+    db.prepare("DELETE FROM rule_analysis_state WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM events WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pull_players WHERE pull_id IN (SELECT id FROM pulls WHERE report_id = ?)").bind(reportId),
     db.prepare("DELETE FROM pulls WHERE report_id = ?").bind(reportId),

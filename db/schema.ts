@@ -73,6 +73,9 @@ export const reanalysisJobs = sqliteTable("reanalysis_jobs", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   completedAt: text("completed_at"),
+  mode: text("mode").notNull().default("full"),
+  ruleIdsJson: text("rule_ids_json").notNull().default("[]"),
+  cancelRequested: integer("cancel_requested", { mode: "boolean" }).notNull().default(false),
 }, (table) => [
   index("idx_reanalysis_jobs_status_updated").on(table.status, table.updatedAt),
   index("idx_reanalysis_jobs_boss_difficulty").on(table.bossId, table.difficulty, table.updatedAt),
@@ -184,6 +187,16 @@ export const mechanicRules = sqliteTable("mechanic_rules", {
   rolesJson: text("roles_json").notNull().default("[]"), conditionJson: text("condition_json").notNull().default("{}"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("idx_mechanic_rules_boss_enabled").on(table.bossId, table.enabled), index("idx_mechanic_rules_spell").on(table.spellId)]);
+
+export const ruleAnalysisState = sqliteTable("rule_analysis_state", {
+  pullId: text("pull_id").notNull().references(() => pulls.id, { onDelete: "cascade" }),
+  ruleId: text("rule_id").notNull().references(() => mechanicRules.id, { onDelete: "cascade" }),
+  ruleUpdatedAt: text("rule_updated_at").notNull(),
+  analyzedAt: text("analyzed_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("idx_rule_analysis_state_pull_rule").on(table.pullId, table.ruleId),
+  index("idx_rule_analysis_state_rule").on(table.ruleId, table.ruleUpdatedAt),
+]);
 
 export const events = sqliteTable("events", {
   id: text("id").primaryKey(), pullId: text("pull_id").notNull().references(() => pulls.id), playerId: text("player_id").references(() => players.id),

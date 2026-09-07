@@ -547,6 +547,22 @@ tbody tr:last-child td { border-bottom: 0; }
 .boss-rule-stats strong { margin-top: 3px; color: #fff; font-family: Georgia, serif; font-size: 16px; font-weight: 500; }
 .boss-rule-toolbar .share-button { min-height: 38px; color: #173d46; border-color: #d7ebe5; background: #d7ebe5; white-space: nowrap; }
 .boss-rule-toolbar .share-button:disabled { color: #789096; border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.08); }
+.boss-rule-actions { min-width: 195px; display: grid; gap: 5px; }
+.boss-rule-actions button { min-height: 36px; padding: 7px 10px; border-radius: 7px; font-size: 8px; font-weight: 850; cursor: pointer; }
+.boss-rule-actions button:disabled { cursor: wait; opacity: .65; }
+.boss-rule-actions .full-recalibration { color: #c4d7d8; border: 1px solid rgba(220,239,234,.26); background: rgba(255,255,255,.06); }
+.boss-rule-actions .full-recalibration:hover:not(:disabled) { color: #fff; border-color: #aaccc3; background: rgba(255,255,255,.12); }
+.boss-rule-actions > small { max-width: 220px; color: #96afb3; font-size: 6px; line-height: 1.4; }
+.boss-reanalysis-progress { margin: -5px 0 14px; padding: 11px 13px; display: grid; grid-template-columns: minmax(210px, .85fr) minmax(180px, 1fr) auto; align-items: center; gap: 12px; border: 1px solid #c7dbd5; border-radius: 10px; background: #f4f9f7; }
+.boss-reanalysis-progress > div:first-child small, .boss-reanalysis-progress > div:first-child strong, .boss-reanalysis-progress > div:first-child span { display: block; }
+.boss-reanalysis-progress > div:first-child small { color: #2c8069; font-size: 6px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.boss-reanalysis-progress > div:first-child strong { margin-top: 3px; color: #315159; font-size: 9px; }
+.boss-reanalysis-progress > div:first-child span { margin-top: 3px; color: #7b8f93; font-size: 7px; }
+.boss-reanalysis-progress .import-progress { margin: 0; }
+.boss-reanalysis-controls { display: flex; gap: 6px; }
+.boss-reanalysis-controls button { min-height: 33px; padding: 7px 9px; border: 1px solid #bcd6cf; border-radius: 7px; color: #285d50; background: #e5f2ee; font-size: 7px; font-weight: 850; cursor: pointer; }
+.boss-reanalysis-controls button:disabled { cursor: wait; opacity: .6; }
+.boss-reanalysis-controls .danger-text { color: #985247; border-color: #e2c7c1; background: #fff8f6; }
 .rule-difficulty-tabs { margin: -2px 0 14px; padding: 5px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; border: 1px solid #cadbd7; border-radius: 12px; background: #e8efed; }
 .rule-difficulty-tabs button { min-height: 52px; padding: 8px 12px; display: grid; align-content: center; gap: 3px; border: 1px solid transparent; border-radius: 8px; color: #62787e; background: transparent; cursor: pointer; text-align: left; transition: color .16s ease, border-color .16s ease, background .16s ease, box-shadow .16s ease; }
 .rule-difficulty-tabs button:hover { color: #264a50; background: rgba(255,255,255,.65); }
@@ -676,10 +692,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .reanalysis-job > div:first-child small { margin-top: 3px; color: #7c8e92; font-size: 8px; }
 .reanalysis-job > span { color: #60777c; font-size: 8px; font-weight: 850; white-space: nowrap; }
 .reanalysis-job .import-progress { min-width: 130px; margin: 0; }
-.reanalysis-job > button { min-height: 32px; padding: 7px 9px; border: 1px solid #bcd6cf; border-radius: 7px; color: #285d50; background: #e5f2ee; font-size: 8px; font-weight: 850; cursor: pointer; }
-.reanalysis-job > button:disabled { cursor: wait; opacity: .6; }
+.reanalysis-job-actions { display: flex; gap: 5px; }
+.reanalysis-job-actions button { min-height: 32px; padding: 7px 9px; border: 1px solid #bcd6cf; border-radius: 7px; color: #285d50; background: #e5f2ee; font-size: 8px; font-weight: 850; cursor: pointer; }
+.reanalysis-job-actions button:disabled { cursor: wait; opacity: .6; }
+.reanalysis-job-actions .danger-text { color: #985247; border-color: #e2c7c1; background: #fff8f6; }
 .reanalysis-job > p { grid-column: 1 / -1; margin: 0; color: #98604e; font-size: 8px; line-height: 1.45; }
-.reanalysis-paused, .reanalysis-failed { border-color: #e5d3bd; background: #fbf7f0; }
+.reanalysis-paused, .reanalysis-failed, .reanalysis-stopped { border-color: #e5d3bd; background: #fbf7f0; }
 .reanalysis-completed { border-color: #bfe0d5; background: #eef8f4; }
 .calibration-status { margin-top: 12px; margin-bottom: 0; }
 .primary-button { width: 100%; margin-top: 16px; padding: 11px 14px; border: 0; border-radius: 8px; color: #fff; background: var(--navy); font-size: 10px; font-weight: 800; cursor: pointer; }
@@ -845,6 +863,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .roster-manager-heading, .module-manager-heading, .run-manager-heading { align-items: start; }
   .boss-rule-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .boss-rule-toolbar { grid-template-columns: 1fr; }
+  .boss-rule-actions > small { max-width: none; }
+  .boss-reanalysis-progress { grid-template-columns: 1fr; }
   .calibration-source { grid-template-columns: 1fr; }
   .calibration-source > div:nth-child(2) { grid-template-columns: repeat(4, 1fr); }
   .calibration-evidence, .calibration-controls { margin-left: 0; }
@@ -906,9 +926,11 @@ tbody tr:last-child td { border-bottom: 0; }
   .boss-rule-grid, .boss-rule-stats { grid-template-columns: 1fr 1fr; }
   .boss-rule-toolbar { align-items: stretch; }
   .boss-rule-toolbar .share-button { white-space: normal; }
+  .boss-reanalysis-controls { align-items: stretch; flex-direction: column; }
   .score-math, .calibration-form, .calibration-save { grid-template-columns: 1fr; }
   .reanalysis-job { grid-template-columns: 1fr auto; }
-  .reanalysis-job .import-progress, .reanalysis-job > button { grid-column: 1 / -1; }
+  .reanalysis-job .import-progress, .reanalysis-job-actions { grid-column: 1 / -1; }
+  .reanalysis-job-actions { align-items: stretch; flex-direction: column; }
   .score-math > b { transform: rotate(90deg); }
   .calibration-source > div:nth-child(2), .calibration-role-tabs { grid-template-columns: 1fr 1fr; }
   .calibration-card-main { grid-template-columns: 1fr auto; }

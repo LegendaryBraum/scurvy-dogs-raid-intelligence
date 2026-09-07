@@ -37,7 +37,7 @@ test("server-renders the link-locked public shell without private raid data", as
 });
 
 test("keeps importing, configuration, scoring, and privacy as separate product concerns", async () => {
-  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration, reanalysisJobs, reanalysisMigration] = await Promise.all([
+  const [app, importer, importJobs, reanalyzer, dashboard, scoring, schema, share, warcraftLogs, roster, modules, config, spellIcons, runs, identities, history, migration, pullMigration, accessManage, accessSession, officerAccess, ownerAccess, shareApi, privatePlaceholder, accessMigration, wclStatus, importJobMigration, reanalysisJobs, reanalysisMigration, smartReanalysisMigration] = await Promise.all([
     readFile(new URL("../app/components/RaidApp.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/import-jobs/route.ts", import.meta.url), "utf8"),
@@ -67,6 +67,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../drizzle/0008_sleepy_skreet.sql", import.meta.url), "utf8"),
     readFile(new URL("../app/api/reanalysis-jobs/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0010_redundant_mysterio.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0011_fresh_puma.sql", import.meta.url), "utf8"),
   ]);
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
@@ -90,8 +91,11 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /Duplicate/);
   assert.match(app, /Save rule changes/);
   assert.match(app, /Upload another Wipefest boss/);
-  assert.match(app, /Apply rules to .* saved pull/);
+  assert.match(app, /Update .* affected pull/);
   assert.match(app, /Continue recalculation/);
+  assert.match(app, /All pulls current/);
+  assert.match(app, /Full recalibration/);
+  assert.match(app, /Stop after current pull/);
   assert.match(app, /saved checkpoint/);
   assert.match(app, /Keep the season history clean/);
   assert.match(app, /Link mains and alternate characters/);
@@ -148,6 +152,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(schema, /playerIdentities/);
   assert.match(schema, /importJobs/);
   assert.match(schema, /reanalysisJobs/);
+  assert.match(schema, /ruleAnalysisState/);
   assert.match(schema, /included: integer\("included"/);
   assert.match(modules, /score_module_settings/);
   assert.match(config, /export async function PATCH/);
@@ -226,9 +231,17 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(reanalysisJobs, /completed_pull_ids_json/);
   assert.match(reanalysisJobs, /status = 'paused'/);
   assert.match(reanalysisJobs, /WarcraftLogsRateLimitError/);
-  assert.match(reanalysisJobs, /resetExisting: true/);
+  assert.match(reanalysisJobs, /resetExisting: job\.mode === "full"/);
   assert.match(reanalysisJobs, /p\.difficulty = \?/);
+  assert.match(reanalysisJobs, /rule_analysis_state/);
+  assert.match(reanalysisJobs, /mode === "full"/);
+  assert.match(reanalysisJobs, /action === "stop"/);
+  assert.match(reanalysisJobs, /action === "resume"/);
+  assert.match(reanalysisJobs, /cancel_requested/);
   assert.match(reanalysisMigration, /CREATE TABLE `reanalysis_jobs`/);
+  assert.match(smartReanalysisMigration, /CREATE TABLE `rule_analysis_state`/);
+  assert.match(smartReanalysisMigration, /ADD `rule_ids_json`/);
+  assert.match(smartReanalysisMigration, /ADD `cancel_requested`/);
   assert.doesNotMatch(privatePlaceholder, /Nek\.zali|Alnima/);
   assert.match(wclStatus, /fetchRateLimitStatus/);
   assert.match(wclStatus, /status: 429/);
