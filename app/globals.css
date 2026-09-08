@@ -848,6 +848,62 @@ tbody tr:last-child td { border-bottom: 0; }
 .import-job-actions button { padding: 0; border: 0; background: transparent; font-size: 8px; }
 .resume-import { width: 100%; margin-top: 12px; }
 
+.raid-health-modal { width: min(900px, 100%); max-height: min(900px, calc(100vh - 40px)); padding: 28px; overflow-y: auto; border-radius: 16px; background: #f8fbfa; box-shadow: 0 28px 80px rgba(3, 18, 23, .28); }
+.raid-health-hero { margin-top: 18px; padding: 20px; display: flex; align-items: center; gap: 16px; border: 1px solid; border-radius: 13px; }
+.raid-health-hero > span { width: 46px; height: 46px; flex: 0 0 46px; display: grid; place-items: center; border-radius: 50%; color: #fff; font-size: 22px; font-weight: 900; }
+.raid-health-hero small, .raid-health-hero strong { display: block; }
+.raid-health-hero small { margin-bottom: 4px; font-size: 12px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.raid-health-hero strong { color: #213f46; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+.raid-health-hero p { margin: 6px 0 0; color: #5f7479; font-size: 14px; line-height: 1.5; }
+.health-ready { border-color: #b8dace; background: #edf8f4; }
+.health-ready > span { background: #238167; }
+.health-ready small { color: #26725f; }
+.health-review { border-color: #e4cca5; background: #fff8ec; }
+.health-review > span { background: #b77b24; }
+.health-review small { color: #94651f; }
+.raid-health-summary { margin-top: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.raid-health-summary > span { padding: 13px 14px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border: 1px solid #dae6e3; border-radius: 9px; background: #fff; }
+.raid-health-summary strong { color: #274850; font-family: Georgia, serif; font-size: 22px; font-weight: 500; }
+.raid-health-summary small { color: #73868b; font-size: 12px; font-weight: 800; }
+.raid-health-section { margin-top: 18px; }
+.raid-health-section-heading { margin-bottom: 9px; display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+.raid-health-section-heading small { color: #7b8e92; font-size: 12px; font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+.raid-health-section-heading h3 { margin: 3px 0 0; color: #28464e; font-family: Georgia, serif; font-size: 19px; font-weight: 500; }
+.raid-health-section-heading > span { color: #587178; font-size: 13px; font-weight: 850; }
+.raid-health-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.health-check { min-height: 58px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; border: 1px solid #dde7e5; border-radius: 9px; background: #fff; }
+.health-check > i { width: 25px; height: 25px; flex: 0 0 25px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: #8a9b9e; font-size: 12px; font-style: normal; font-weight: 900; }
+.health-check strong, .health-check small { display: block; }
+.health-check strong { color: #304e56; font-size: 13px; }
+.health-check small { margin-top: 3px; color: #74868b; font-size: 12px; line-height: 1.35; }
+.health-check-pass > i { background: #27866c; }
+.health-check-warning { border-color: #ead8b8; background: #fffbf3; }
+.health-check-warning > i { background: #bd8127; }
+.health-check-info > i { background: #668897; }
+.raid-health-issues { display: grid; gap: 7px; }
+.health-issue { padding: 13px; display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 11px; border: 1px solid #e2e9e7; border-radius: 10px; background: #fff; }
+.health-issue > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; color: #fff; background: #6c8992; font-size: 13px; font-weight: 900; }
+.health-issue-warning { border-color: #e7d0ab; background: #fffaf1; }
+.health-issue-warning > span { background: #b97d26; }
+.health-issue strong { color: #2b4951; font-size: 14px; }
+.health-issue p { margin: 4px 0 0; color: #687c81; font-size: 12px; line-height: 1.45; }
+.health-issue button { padding: 8px 10px; border: 1px solid #bfd8d1; border-radius: 7px; color: #296553; background: #e9f5f1; font-size: 12px; font-weight: 850; cursor: pointer; white-space: nowrap; }
+.raid-health-bosses { margin-top: 18px; overflow: hidden; border: 1px solid #d9e5e2; border-radius: 10px; background: #fff; }
+.raid-health-bosses summary { padding: 13px 15px; display: flex; justify-content: space-between; color: #344f56; background: #eef5f3; font-size: 13px; font-weight: 850; cursor: pointer; }
+.raid-health-bosses summary span { color: #698087; }
+.raid-health-bosses > div > article { padding: 11px 14px; display: grid; grid-template-columns: 58px minmax(180px, 1fr) 82px 70px 65px; align-items: center; gap: 10px; border-top: 1px solid #e8efed; }
+.raid-health-bosses strong, .raid-health-bosses small, .raid-health-bosses b { display: block; }
+.raid-health-bosses strong { color: #2c4951; font-size: 13px; }
+.raid-health-bosses small { margin-top: 2px; color: #788a8e; font-size: 11px; }
+.raid-health-bosses b { color: #35555d; font-size: 14px; }
+.health-boss-state { padding: 5px 7px; border-radius: 999px; font-size: 10px; font-weight: 900; text-align: center; text-transform: uppercase; }
+.health-boss-ready { color: #26715d; background: #e1f1ec; }
+.health-boss-review { color: #8e611f; background: #f8e8c9; }
+.health-boss-warning b { color: #ad6f1b; }
+.raid-health-footer { margin-top: 18px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.raid-health-footer button { min-width: 130px; padding: 10px 14px; border: 1px solid #ccdcd9; border-radius: 8px; color: #526d73; background: #fff; font-size: 13px; font-weight: 850; cursor: pointer; }
+.raid-health-footer .primary-button { width: auto; margin: 0; border-color: var(--navy); color: #fff; background: var(--navy); }
+
 .private-shell { min-height: 100vh; background: #f3f7f6; }
 .private-topbar { height: 72px; padding: 0 clamp(20px, 5vw, 72px); display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: #fafcfb; }
 .privacy-badge { padding: 7px 10px; border-radius: 20px; color: #26735e; background: #e3f2ec; font-size: 8px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
@@ -928,6 +984,9 @@ tbody tr:last-child td { border-bottom: 0; }
   .calibration-evidence, .calibration-controls { margin-left: 0; }
   .calibration-controls { grid-template-columns: repeat(3, 1fr); }
   .calibration-controls fieldset { grid-column: 1 / -1; }
+  .raid-health-checks { grid-template-columns: 1fr; }
+  .raid-health-bosses > div > article { grid-template-columns: 58px 1fr 70px 70px; }
+  .raid-health-bosses > div > article > span:last-child { display: none; }
 }
 
 @media (max-width: 540px) {
@@ -956,6 +1015,17 @@ tbody tr:last-child td { border-bottom: 0; }
   .score-heading small { display: block; margin-top: 4px; }
   .score-value { font-size: 32px; }
   .score-card-action { margin-top: 8px; }
+  .modal-backdrop { padding: 10px; align-items: start; }
+  .raid-health-modal { max-height: calc(100vh - 20px); padding: 19px; }
+  .raid-health-hero { align-items: flex-start; }
+  .raid-health-hero strong { font-size: 21px; }
+  .raid-health-summary { grid-template-columns: 1fr 1fr; }
+  .health-issue { grid-template-columns: 28px 1fr; }
+  .health-issue button { grid-column: 2; justify-self: start; }
+  .raid-health-bosses > div > article { grid-template-columns: 55px 1fr 60px; }
+  .raid-health-bosses > div > article > span:nth-last-child(-n+2) { display: none; }
+  .raid-health-footer { align-items: stretch; flex-direction: column-reverse; }
+  .raid-health-footer button, .raid-health-footer .primary-button { width: 100%; }
   .score-detail-heading { gap: 14px; }
   .score-detail-stats { gap: 7px; }
   .score-detail-stats > span { padding: 12px; }

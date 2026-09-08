@@ -84,6 +84,7 @@ async function stableId(prefix: string, value: string) {
 function publicJob(job: ImportJobRow) {
   return {
     id: job.id,
+    raidNightId: job.raid_night_id,
     reportCode: job.report_code,
     reportUrl: job.report_url,
     status: job.status,

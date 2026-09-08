@@ -108,6 +108,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
     readFile(new URL("../app/api/rule-audit/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/rule-analysis.ts", import.meta.url), "utf8"),
   ]);
+  const raidHealth = await readFile(new URL("../app/api/raid-health/route.ts", import.meta.url), "utf8");
   assert.match(app, /Spell ID/);
   assert.match(app, /Officer workspace/);
   assert.match(app, /score-detail-panel/);
@@ -121,6 +122,12 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(app, /of .* pulls analyzed/);
   assert.match(app, /Remove unfinished import/);
   assert.match(app, /Retry from last checkpoint/);
+  assert.match(app, /Raid night health check/);
+  assert.match(app, /Ready to share/);
+  assert.match(app, /need review/);
+  assert.match(app, /Did everything land correctly/);
+  assert.match(app, /Health check/);
+  assert.doesNotMatch(app, /window\.location\.reload/);
   assert.match(app, /Choose individual pulls/);
   assert.match(app, /Only the selected pulls/);
   assert.match(app, /Choose who belongs in the analysis/);
@@ -176,6 +183,7 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(importJobs, /source_mode, included.*'importing', 0/);
   assert.match(importJobs, /replaceReportCodes/);
   assert.match(importJobs, /raidNightId/);
+  assert.match(importJobs, /raidNightId: job\.raid_night_id/);
   assert.match(importJobs, /Review the report and select at least one pull/);
   assert.match(importJobs, /status = 'paused'/);
   assert.match(importJobs, /status = 'completed'/);
@@ -326,9 +334,13 @@ test("keeps importing, configuration, scoring, and privacy as separate product c
   assert.match(notesMigration, /`visibility` text DEFAULT 'player'/);
   assert.match(schema, /officerNotes/);
   assert.match(runs, /DELETE FROM officer_notes WHERE raid_night_id/);
+  assert.match(raidHealth, /zero matches/);
+  assert.match(raidHealth, /Scores match current rules/);
+  assert.match(raidHealth, /first_happened_at/);
+  assert.match(raidHealth, /rule_analysis_state/);
   assert.match(importJobs, /UPDATE officer_notes SET pull_id/);
   assert.match(identities, /UPDATE officer_notes SET player_id/);
-  for (const privateRoute of [importer, importJobs, reanalyzer, reanalysisJobs, ruleAudit, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
+  for (const privateRoute of [importer, importJobs, reanalyzer, reanalysisJobs, ruleAudit, raidHealth, config, runs, identities, history, roster, modules, spellIcons, shareApi, wclStatus, notesApi, officerHistoryApi]) assert.match(privateRoute, /getOfficerSession/);
   assert.match(schema, /playerAccessLinks/);
   assert.match(schema, /officerSessions/);
 });

@@ -15,7 +15,17 @@ type ImportFight = { id: number; name: string; pullNumber: number; difficulty: s
 type ImportGroup = { id: string; label: string; description: string; kind: "raid" | "mythic_plus" | "other"; defaultSelected: boolean; fights: ImportFight[] };
 type ImportPreview = { code: string; title: string; raid: string; visibility: string; startedAt: number; pullCount: number; playerCount: number; bosses: { name: string; pulls: number; kills: number }[]; groups: ImportGroup[] };
 type WclAllowance = { state: "checking" | "ready" | "low" | "full" | "unavailable"; percentRemaining?: number; pointsResetIn?: number; error?: string };
-type ImportJob = { id: string; reportCode: string; reportUrl: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
+type ImportJob = { id: string; raidNightId: string; reportCode: string; reportUrl: string; status: "queued" | "processing" | "paused" | "failed" | "completed"; totalPulls: number; completedPulls: number; currentLabel?: string | null; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
+type RaidHealthAction = { view: "configure" | "officer"; section?: ConfigureSection; bossId?: string; difficulty?: RuleDifficulty; label: string };
+type RaidHealthIssue = { id: string; severity: "warning" | "info"; title: string; detail: string; action?: RaidHealthAction };
+type RaidHealthCheck = {
+  raidNight: { id: string; name: string; happenedAt: string };
+  status: "ready" | "review";
+  summary: { reports: number; pulls: number; bosses: number; players: number; checksPassed: number; checksTotal: number };
+  checks: Array<{ id: string; label: string; detail: string; status: "pass" | "warning" | "info" }>;
+  issues: RaidHealthIssue[];
+  bosses: Array<{ bossId: string; bossName: string; difficulty: string; pulls: number; kills: number; activeRules: number; matchedRules: number; zeroMatchRules: number; staleRules: number; missingPerformanceRows: number; status: "ready" | "review" }>;
+};
 type ReanalysisJob = { id: string; bossId: string; bossName: string; difficulty: string; status: "queued" | "processing" | "paused" | "failed" | "stopped" | "completed"; mode: "changed" | "full"; cancelRequested?: boolean; totalPulls: number; completedPulls: number; currentLabel?: string | null; events: number; playerScoreUpdates: number; rules: number; error?: string | null; retryAfterSeconds?: number; resumeAfter?: string | null; createdAt: string; completedAt?: string | null };
 type ReanalysisPlan = { bossId: string; bossName: string; difficulty: string; pullCount: number; ruleCount: number; fullPullCount: number; activeRuleCount: number; current: boolean; ruleIds: string[] };
 type RuleAuditPull = { id: string; label: string; raidNight: string; happenedAt: string; pullNumber: number; result: string; duration: string; reportCode: string };
@@ -74,6 +84,19 @@ function ImportModal({ reportUrls, previews, selections, jobs, allowance, busy, 
       {previews.length > 0 && <div className="selective-import-review">{previews.map((preview) => <article className="selective-report" key={preview.code}><div className="import-review-heading"><div><small>{preview.raid} · {new Date(preview.startedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small><strong>{preview.title}</strong></div><span>{preview.visibility}</span></div><div className="import-review-totals"><span><strong>{preview.pullCount}</strong><small>Encounters found</small></span><span><strong>{selections[preview.code]?.length ?? 0}</strong><small>Selected pulls</small></span><span><strong>{preview.playerCount}</strong><small>Unique players</small></span></div><div className="content-group-list">{preview.groups.map((group) => { const selectedIds = selections[preview.code] ?? []; const selectedInGroup = group.fights.filter((fight) => selectedIds.includes(fight.id)).length; const allSelected = selectedInGroup === group.fights.length; return <section className={`content-group content-${group.kind}`} key={group.id}><div className="content-group-heading"><label><input checked={allSelected} onChange={() => onToggleGroup(preview.code, group, !allSelected)} type="checkbox" /><span><strong>{group.label}</strong><small>{group.description}</small></span></label><span className={`content-kind content-kind-${group.kind}`}>{group.kind === "mythic_plus" ? "M+" : group.kind === "raid" ? "Raid" : "Other"}</span><span className="selection-count">{selectedInGroup}/{group.fights.length} selected</span></div><details><summary>Choose individual pulls</summary><div className="pull-selection-list">{group.fights.map((fight) => <label className="pull-selection" key={fight.id}><input checked={selectedIds.includes(fight.id)} onChange={() => onToggleFight(preview.code, fight.id)} type="checkbox" /><span><strong>{group.kind === "mythic_plus" ? fight.name : `Pull ${fight.pullNumber}`}</strong><small>{fight.difficulty} · {fight.duration} · {fight.playerCount} players</small></span><b>{fight.result}</b></label>)}</div></details></section>; })}</div></article>)}<div className="selection-summary"><span><strong>{selectedCount}</strong> selected</span><span><strong>{excludedCount}</strong> excluded</span><p>Only the selected pulls will be written to the raid analysis database.</p></div><button className="primary-button confirm-import" disabled={busy || selectedCount === 0} onClick={onConfirm} type="button">{busy ? "Creating safe import…" : `Import ${selectedCount} selected pull${selectedCount === 1 ? "" : "s"}`}</button><button className="review-again" disabled={busy} onClick={onReset} type="button">Use a different link</button></div>}
       <small className="credential-note">Trash is omitted automatically. Raid encounters start selected; Mythic+ and unclassified encounters start unchecked.</small>
     </>}
+  </section></div>;
+}
+
+function RaidHealthModal({ health, onClose, onAction }: { health: RaidHealthCheck; onClose: () => void; onAction: (action: RaidHealthAction) => void }) {
+  const warningCount = health.issues.filter((issue) => issue.severity === "warning").length;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><section className="raid-health-modal" role="dialog" aria-modal="true" aria-labelledby="raid-health-title" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="modal-heading"><div><p className="eyebrow"><span /> Raid night health check</p><h2 id="raid-health-title">{health.raidNight.name}</h2></div><button type="button" onClick={onClose} aria-label="Close health check">×</button></div>
+    <div className={`raid-health-hero health-${health.status}`}><span aria-hidden="true">{health.status === "ready" ? "✓" : "!"}</span><div><small>{health.summary.checksPassed} of {health.summary.checksTotal} checks passed</small><strong>{health.status === "ready" ? "Ready to share" : `${warningCount} item${warningCount === 1 ? "" : "s"} need review`}</strong><p>{health.status === "ready" ? "The selected pulls, boss rules, scores, and performance context all look current." : "The raid data is saved. Review the items below before treating every score as final."}</p></div></div>
+    <div className="raid-health-summary" aria-label="Imported raid summary"><span><strong>{health.summary.reports}</strong><small>Report{health.summary.reports === 1 ? "" : "s"}</small></span><span><strong>{health.summary.pulls}</strong><small>Pulls</small></span><span><strong>{health.summary.bosses}</strong><small>Boss stages</small></span><span><strong>{health.summary.players}</strong><small>Active players</small></span></div>
+    <section className="raid-health-section"><div className="raid-health-section-heading"><div><small>Automatic checks</small><h3>Did everything land correctly?</h3></div><span>{health.summary.checksPassed}/{health.summary.checksTotal}</span></div><div className="raid-health-checks">{health.checks.map((check) => <div className={`health-check health-check-${check.status}`} key={check.id}><i aria-hidden="true">{check.status === "pass" ? "✓" : check.status === "warning" ? "!" : "i"}</i><div><strong>{check.label}</strong><small>{check.detail}</small></div></div>)}</div></section>
+    {health.issues.length > 0 && <section className="raid-health-section"><div className="raid-health-section-heading"><div><small>Review queue</small><h3>What needs a closer look</h3></div><span>{health.issues.length}</span></div><div className="raid-health-issues">{health.issues.map((issue) => <article className={`health-issue health-issue-${issue.severity}`} key={issue.id}><span aria-hidden="true">{issue.severity === "warning" ? "!" : "i"}</span><div><strong>{issue.title}</strong><p>{issue.detail}</p></div>{issue.action && <button type="button" onClick={() => onAction(issue.action!)}>{issue.action.label} →</button>}</article>)}</div></section>}
+    <details className="raid-health-bosses"><summary>Boss-by-boss calibration coverage <span>{health.bosses.filter((boss) => boss.status === "ready").length}/{health.bosses.length} clear</span></summary><div>{health.bosses.map((boss) => <article key={`${boss.bossId}-${boss.difficulty}`}><span className={`health-boss-state health-boss-${boss.status}`}>{boss.status === "ready" ? "Ready" : "Review"}</span><div><strong>{boss.bossName}</strong><small>{boss.difficulty} · {boss.pulls} pull{boss.pulls === 1 ? "" : "s"} · {boss.kills} kill{boss.kills === 1 ? "" : "s"}</small></div><span><b>{boss.activeRules}</b><small>Active rules</small></span><span><b>{boss.matchedRules}</b><small>Matched</small></span>{boss.staleRules > 0 && <span className="health-boss-warning"><b>{boss.staleRules}</b><small>Behind</small></span>}</article>)}</div></details>
+    <div className="raid-health-footer"><button type="button" onClick={onClose}>Close for now</button><button className="primary-button" type="button" onClick={() => onAction({ view: "officer", label: "Open Officer View" })}>Open Officer View</button></div>
   </section></div>;
 }
 
@@ -354,13 +377,13 @@ function RuleAuditPanel({ bossId, bossName, difficulty, rules, changedRuleIds, d
   </section>;
 }
 
-function RaidNightManager({ raidNights, busy, status, onToggle, onDelete, onReplace, onAdd }: { raidNights: RaidNightRecord[]; busy: boolean; status: string; onToggle: (target: "raid_night" | "report" | "pull", id: string, included: boolean) => void; onDelete: (target: "raid_night" | "report", id: string, label: string) => void; onReplace: (report: RaidReportRecord) => void; onAdd: (night: RaidNightRecord) => void }) {
+function RaidNightManager({ raidNights, busy, status, onToggle, onDelete, onReplace, onAdd, onHealth }: { raidNights: RaidNightRecord[]; busy: boolean; status: string; onToggle: (target: "raid_night" | "report" | "pull", id: string, included: boolean) => void; onDelete: (target: "raid_night" | "report", id: string, label: string) => void; onReplace: (report: RaidReportRecord) => void; onAdd: (night: RaidNightRecord) => void; onHealth: (night: RaidNightRecord) => void }) {
   const active = raidNights.filter((night) => night.included).length;
   return <article className="panel run-manager">
     <div className="run-manager-heading"><div><p className="eyebrow muted"><span /> Raid nights, reports & pulls</p><h2>Keep the season history clean</h2><p>Open any report to exclude individual pulls without deleting them. Whole nights and reports remain reversible too.</p></div><div className="module-count"><strong>{active}</strong><small>Active nights</small></div></div>
     {status && <p className="roster-status" role="status">{status}</p>}
     <div className="raid-night-list">{raidNights.map((night) => <section className={`raid-night-card ${night.included ? "" : "run-archived"}`} key={night.id}>
-      <div className="raid-night-heading"><div><span className="run-date">{new Date(night.happenedAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span><strong>{night.name}</strong><small>{night.reportCount} report{night.reportCount === 1 ? "" : "s"} · {night.activePullCount}/{night.pullCount} active pulls</small></div><span className={`run-state ${night.included ? "active" : "archived"}`}>{night.included ? "Active" : "Excluded"}</span><div className="run-actions"><button disabled={busy} onClick={() => onAdd(night)} type="button">Add report</button><button disabled={busy} onClick={() => onToggle("raid_night", night.id, !night.included)} type="button">{night.included ? "Exclude night" : "Restore night"}</button><button className="danger-text" disabled={busy} onClick={() => onDelete("raid_night", night.id, night.name)} type="button">Delete</button></div></div>
+      <div className="raid-night-heading"><div><span className="run-date">{new Date(night.happenedAt).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span><strong>{night.name}</strong><small>{night.reportCount} report{night.reportCount === 1 ? "" : "s"} · {night.activePullCount}/{night.pullCount} active pulls</small></div><span className={`run-state ${night.included ? "active" : "archived"}`}>{night.included ? "Active" : "Excluded"}</span><div className="run-actions"><button disabled={busy} onClick={() => onHealth(night)} type="button">Health check</button><button disabled={busy} onClick={() => onAdd(night)} type="button">Add report</button><button disabled={busy} onClick={() => onToggle("raid_night", night.id, !night.included)} type="button">{night.included ? "Exclude night" : "Restore night"}</button><button className="danger-text" disabled={busy} onClick={() => onDelete("raid_night", night.id, night.name)} type="button">Delete</button></div></div>
       <div className="saved-report-list">{night.reports.map((report) => <section className={`saved-report ${report.included ? "" : "run-archived"}`} key={report.id}>
         <div className="saved-report-summary"><div><strong>{report.title}</strong><small>{report.zoneName} · {report.pullCount} pulls · {report.bossCount} bosses · {report.playerCount} players</small><a href={report.url} rel="noreferrer" target="_blank">{report.code}</a></div><span className={`run-state ${report.included ? "active" : "archived"}`}>{report.included ? "Included" : "Excluded"}</span><div className="run-actions"><button disabled={busy} onClick={() => onReplace(report)} type="button">Replace / reimport</button><button disabled={busy || !night.included} onClick={() => onToggle("report", report.id, !report.included)} type="button">{report.included ? "Exclude" : "Restore"}</button><button className="danger-text" disabled={busy} onClick={() => onDelete("report", report.id, report.title)} type="button">Delete</button></div></div>
         <details className="saved-pull-review"><summary><span>Review individual pulls</span><small>{report.pulls.filter((pull) => pull.included).length}/{report.pullCount} selected</small></summary><div className="saved-pull-list">{report.pulls.map((pull) => <div className={`saved-pull ${pull.included ? "" : "run-archived"}`} key={pull.id}><span className="pull-order">#{pull.pullNumber}</span><div><strong>{pull.bossName}</strong><small>{pull.difficulty} · {pull.duration}</small></div><span className={`pull-result ${pull.result === "Kill" ? "kill" : "wipe"}`}>{pull.result}</span><span className={`run-state ${pull.included ? "active" : "archived"}`}>{pull.included ? "Included" : "Excluded"}</span><button disabled={busy || !night.included || !report.included} onClick={() => onToggle("pull", pull.id, !pull.included)} type="button">{pull.included ? "Exclude pull" : "Restore pull"}</button></div>)}{report.pulls.length === 0 && <p className="detail-empty">No stored pulls were found in this report.</p>}</div></details>
@@ -519,6 +542,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   const [importSelections, setImportSelections] = useState<Record<string, number[]>>({});
   const [importJobs, setImportJobs] = useState<ImportJob[]>([]);
   const [importStatus, setImportStatus] = useState("");
+  const [raidHealth, setRaidHealth] = useState<RaidHealthCheck | null>(null);
   const [wclAllowance, setWclAllowance] = useState<WclAllowance>({ state: "checking" });
   const [importRaidNightId, setImportRaidNightId] = useState<string | null>(null);
   const [replaceReportCodes, setReplaceReportCodes] = useState<string[]>([]);
@@ -823,6 +847,31 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
     setImportRaidNightId(null); setReplaceReportCodes([]); setReportUrls(""); setWclAllowance({ state: "checking" }); resetImportReview(); setImportOpen(true);
   }
 
+  async function loadRaidHealth(raidNightId: string) {
+    const response = await fetch(`/api/raid-health?raidNightId=${encodeURIComponent(raidNightId)}`, { cache: "no-store" });
+    const result = await response.json() as { health?: RaidHealthCheck; error?: string };
+    if (!response.ok || !result.health) throw new Error(result.error ?? "The raid night health check could not be completed.");
+    return result.health;
+  }
+
+  async function openRaidHealth(night: RaidNightRecord) {
+    setBusy(true); setRunStatus(`Checking ${night.name}…`);
+    try {
+      setRaidHealth(await loadRaidHealth(night.id));
+      setRunStatus("");
+    } catch (error) { setRunStatus(error instanceof Error ? error.message : "The raid night health check could not be completed."); }
+    finally { setBusy(false); }
+  }
+
+  function followRaidHealthAction(action: RaidHealthAction) {
+    setRaidHealth(null);
+    setView(action.view);
+    if (action.view === "configure" && action.section) setConfigureSection(action.section);
+    if (action.bossId && configBosses.some((boss) => boss.id === action.bossId)) setRuleBossId(action.bossId);
+    if (action.difficulty && ruleDifficulties.includes(action.difficulty)) setRuleDifficulty(action.difficulty);
+    setEditingRule(null);
+  }
+
   function addReportToNight(night: RaidNightRecord) {
     setImportRaidNightId(night.id); setReplaceReportCodes([]); setReportUrls(""); setWclAllowance({ state: "checking" }); resetImportReview(); setImportStatus(`The selected report will be added to ${night.name}.`); setImportOpen(true);
   }
@@ -933,8 +982,18 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         }
       }
     }
-    setImportStatus("Every selected pull is complete. Opening the refreshed raid dashboard…");
-    window.setTimeout(() => window.location.reload(), 700);
+    setImportStatus("Every selected pull is complete. Running the raid night health check…");
+    setImportJobs(queue);
+    try {
+      await refreshAnalysisViews();
+      const raidNightId = [...queue].reverse().find((job) => job.raidNightId)?.raidNightId;
+      setImportOpen(false);
+      if (raidNightId) setRaidHealth(await loadRaidHealth(raidNightId));
+      else setRunStatus("Import complete. Open Raid Data to review the saved night.");
+    } catch (error) {
+      setImportOpen(false);
+      setRunStatus(`The import is complete, but the health check could not open: ${error instanceof Error ? error.message : "try it again from Raid Data."}`);
+    }
   }
 
   async function confirmImport() {
@@ -1112,10 +1171,15 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
   }
 
   async function refreshAnalysisViews() {
-    const dashboardResponse = await fetch("/api/dashboard", { cache: "no-store" });
+    const [dashboardResponse, runsResponse] = await Promise.all([
+      fetch("/api/dashboard", { cache: "no-store" }),
+      fetch("/api/runs", { cache: "no-store" }),
+    ]);
     const dashboardResult = await dashboardResponse.json() as { data?: DashboardData; error?: string };
+    const runsResult = await runsResponse.json() as { raidNights?: RaidNightRecord[]; error?: string };
     if (!dashboardResponse.ok || !dashboardResult.data) throw new Error(dashboardResult.error ?? "The refreshed dashboard could not be loaded.");
     applyDashboard(dashboardResult.data);
+    if (runsResponse.ok && runsResult.raidNights) setRunNights(runsResult.raidNights);
     setOfficerHistoryLoading(true);
     setHistoryRevision((revision) => revision + 1);
   }
@@ -1346,7 +1410,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
           <button aria-controls="configure-scoring" aria-selected={configureSection === "scoring"} className={configureSection === "scoring" ? "active" : ""} id="configure-scoring-tab" onClick={() => setConfigureSection("scoring")} role="tab" type="button"><span>Scoring & rules</span><small>Modules & mechanics</small></button>
           <button aria-controls="configure-access" aria-selected={configureSection === "access"} className={configureSection === "access" ? "active" : ""} id="configure-access-tab" onClick={() => setConfigureSection("access")} role="tab" type="button"><span>Access</span><small>Players & officers</small></button>
         </div>
-        {configureSection === "raid-data" && <div aria-labelledby="configure-raid-data-tab" className="configure-section" id="configure-raid-data" role="tabpanel"><RaidNightManager raidNights={runNights} busy={busy} status={runStatus} onToggle={updateRun} onDelete={deleteRun} onReplace={replaceReport} onAdd={addReportToNight} /></div>}
+        {configureSection === "raid-data" && <div aria-labelledby="configure-raid-data-tab" className="configure-section" id="configure-raid-data" role="tabpanel"><RaidNightManager raidNights={runNights} busy={busy} status={runStatus} onToggle={updateRun} onDelete={deleteRun} onReplace={replaceReport} onAdd={addReportToNight} onHealth={openRaidHealth} /></div>}
         {configureSection === "people" && <div aria-labelledby="configure-people-tab" className="configure-section" id="configure-people" role="tabpanel">
           <RosterManager members={rosterMembers} busy={busy} status={rosterStatus} onToggle={updateRoster} />
           <IdentityManager members={rosterMembers} busy={busy} status={identityStatus} onLink={linkIdentity} />
@@ -1389,6 +1453,7 @@ export function RaidApp({ initialData: fallbackData }: { initialData: DashboardD
         onToggleFight={toggleImportFight}
         onReset={resetImportReview}
       />}
+      {raidHealth && <RaidHealthModal health={raidHealth} onClose={() => setRaidHealth(null)} onAction={followRaidHealthAction} />}
     </main>
   );
 }
